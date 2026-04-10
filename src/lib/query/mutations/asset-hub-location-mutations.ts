@@ -14,58 +14,13 @@ import {
   GLOBAL_ASSET_PROJECT_ID,
   invalidateGlobalLocations,
 } from './asset-hub-mutations-shared'
-
-interface SelectLocationImageContext {
-  previousQueries: Array<{
-    queryKey: readonly unknown[]
-    data: GlobalLocation[] | undefined
-  }>
-  targetKey: string
-  requestId: number
-}
-
-interface DeleteLocationContext {
-  previousQueries: Array<{
-    queryKey: readonly unknown[]
-    data: GlobalLocation[] | undefined
-  }>
-}
-
-function applyLocationSelection(
-  locations: GlobalLocation[] | undefined,
-  locationId: string,
-  imageIndex: number | null,
-): GlobalLocation[] | undefined {
-  if (!locations) return locations
-  return locations.map((location) => {
-    if (location.id !== locationId) return location
-    return {
-      ...location,
-      images: (location.images || []).map((image) => ({
-        ...image,
-        isSelected: imageIndex !== null && image.imageIndex === imageIndex,
-      })),
-    }
-  })
-}
-
-function captureLocationQuerySnapshots(queryClient: ReturnType<typeof useQueryClient>) {
-  return queryClient
-    .getQueriesData<GlobalLocation[]>({
-      queryKey: queryKeys.globalAssets.locations(),
-      exact: false,
-    })
-    .map(([queryKey, data]) => ({ queryKey, data }))
-}
-
-function restoreLocationQuerySnapshots(
-  queryClient: ReturnType<typeof useQueryClient>,
-  snapshots: Array<{ queryKey: readonly unknown[]; data: GlobalLocation[] | undefined }>,
-) {
-  snapshots.forEach((snapshot) => {
-    queryClient.setQueryData(snapshot.queryKey, snapshot.data)
-  })
-}
+import {
+  applyLocationSelection,
+  captureLocationQuerySnapshots,
+  restoreLocationQuerySnapshots,
+  type DeleteLocationContext,
+  type SelectLocationImageContext,
+} from './asset-hub-location-mutations.shared'
 
 export function useGenerateLocationImage() {
   const queryClient = useQueryClient()

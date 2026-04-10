@@ -6,7 +6,6 @@
  */
 
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
 import { requireUserAuth, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
 import {
@@ -19,6 +18,8 @@ import {
 import { findBuiltinCapabilities } from '@/lib/model-capabilities/catalog'
 import { findBuiltinPricingCatalogEntry } from '@/lib/model-pricing/catalog'
 import type { VideoPricingTier } from '@/lib/model-pricing/video-tier'
+import { parseStoredPayloadArrayOrThrow } from '@/lib/user-api/api-config/stored-payload'
+import { readUserApiConfigExistingPreference } from '@/lib/user-api/api-config/persistence'
 
 type StoredModelType = UnifiedModelType | string
 
@@ -114,43 +115,25 @@ function cloneVideoPricingTiers(rawTiers: Array<{ when: Record<string, Capabilit
 }
 
 function parseStoredModels(rawModels: string | null | undefined): StoredModel[] {
-  if (!rawModels) return []
-  let parsedUnknown: unknown
-  try {
-    parsedUnknown = JSON.parse(rawModels)
-  } catch {
-    throw new ApiError('INVALID_PARAMS', {
-      code: 'MODEL_PAYLOAD_INVALID',
-      field: 'customModels',
-    })
-  }
-  if (!Array.isArray(parsedUnknown)) {
-    throw new ApiError('INVALID_PARAMS', {
-      code: 'MODEL_PAYLOAD_INVALID',
-      field: 'customModels',
-    })
-  }
-  return parsedUnknown as StoredModel[]
+  return parseStoredPayloadArrayOrThrow(
+    rawModels,
+    () =>
+      new ApiError('INVALID_PARAMS', {
+        code: 'MODEL_PAYLOAD_INVALID',
+        field: 'customModels',
+      }),
+  ) as StoredModel[]
 }
 
 function parseStoredProviders(rawProviders: string | null | undefined): StoredProvider[] {
-  if (!rawProviders) return []
-  let parsedUnknown: unknown
-  try {
-    parsedUnknown = JSON.parse(rawProviders)
-  } catch {
-    throw new ApiError('INVALID_PARAMS', {
-      code: 'PROVIDER_PAYLOAD_INVALID',
-      field: 'customProviders',
-    })
-  }
-  if (!Array.isArray(parsedUnknown)) {
-    throw new ApiError('INVALID_PARAMS', {
-      code: 'PROVIDER_PAYLOAD_INVALID',
-      field: 'customProviders',
-    })
-  }
-  return parsedUnknown as StoredProvider[]
+  return parseStoredPayloadArrayOrThrow(
+    rawProviders,
+    () =>
+      new ApiError('INVALID_PARAMS', {
+        code: 'PROVIDER_PAYLOAD_INVALID',
+        field: 'customProviders',
+      }),
+  ) as StoredProvider[]
 }
 
 function hasStoredProviderApiKey(provider: StoredProvider): boolean {
@@ -169,10 +152,7 @@ export const GET = apiHandler(async () => {
   const { session } = authResult
   const userId = session.user.id
 
-  const pref = await prisma.userPreference.findUnique({
-    where: { userId },
-    select: { customModels: true, customProviders: true },
-  })
+  const pref = await readUserApiConfigExistingPreference(userId)
 
   const modelsRaw: StoredModel[] = parseStoredModels(pref?.customModels)
   const providers: StoredProvider[] = parseStoredProviders(pref?.customProviders)

@@ -1,21 +1,12 @@
 import type { Job } from 'bullmq'
 import { prisma } from '@/lib/prisma'
-import { executeAiTextStep } from '@/lib/ai-runtime'
 import {
   getUserWorkflowConcurrencyConfig,
   resolveProjectModelCapabilityGenerationOptions,
 } from '@/lib/config-service'
-import { withInternalLLMStreamCallbacks } from '@/lib/llm-observe/internal-stream-context'
-import { logAIAnalysis } from '@/lib/logging/semantic'
 import { onProjectNameAvailable } from '@/lib/logging/file-writer'
 import { TaskTerminatedError } from '@/lib/task/errors'
 import { reportTaskProgress } from '@/lib/workers/shared'
-import {
-  runStoryToScriptOrchestrator,
-  type StoryToScriptStepMeta,
-  type StoryToScriptStepOutput,
-  type StoryToScriptOrchestratorResult,
-} from '@/lib/novel-promotion/story-to-script/orchestrator'
 import { createWorkerLLMStreamCallbacks, createWorkerLLMStreamContext } from './llm-stream'
 import type { TaskJobData } from '@/lib/task/types'
 import {
@@ -23,35 +14,20 @@ import {
   type AnyObj,
   parseEffort,
   parseTemperature,
-  persistAnalyzedCharacters,
-  persistAnalyzedLocations,
-  persistAnalyzedProps,
-  persistClips,
-  resolveClipRecordId,
 } from './story-to-script-helpers'
-import { getPromptTemplate, PROMPT_IDS } from '@/lib/prompt-i18n'
 import { resolveAnalysisModel } from './resolve-analysis-model'
-import { createArtifact, listArtifacts } from '@/lib/run-runtime/service'
 import { assertWorkflowRunActive, withWorkflowRunLease } from '@/lib/run-runtime/workflow-lease'
-import { parseScreenplayPayload } from './screenplay-convert-helpers'
-
-function readAssetKind(value: Record<string, unknown>): string {
-  return typeof value.assetKind === 'string' ? value.assetKind : 'location'
-}
-
-function isReasoningEffort(value: unknown): value is 'minimal' | 'low' | 'medium' | 'high' {
-  return value === 'minimal' || value === 'low' || value === 'medium' || value === 'high'
-}
-
-function resolveRetryClipId(retryStepKey: string): string | null {
-  if (!retryStepKey.startsWith('screenplay_')) return null
-  const clipId = retryStepKey.slice('screenplay_'.length).trim()
-  return clipId || null
-}
-
-function buildWorkflowWorkerId(job: Job<TaskJobData>, label: string) {
-  return `${label}:${job.queueName}:${job.data.taskId}`
-}
+import {
+  buildStoryToScriptBaseAssets,
+  buildWorkflowWorkerId,
+  createStoryToScriptRunStep,
+  getStoryToScriptPromptTemplates,
+  isReasoningEffort,
+  readAssetKind,
+  resolveRetryClipId,
+} from './story-to-script-task-helpers'
+import { runStoryToScriptRetryStep } from './story-to-script-retry'
+import { runStoryToScriptMainFlow } from './story-to-script-pipeline'
 
 export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
   const payload = (job.data.payload || {}) as AnyObj
@@ -131,11 +107,7 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
   if (!mergedContent.trim()) {
     throw new Error('content is required')
   }
-  const characterPromptTemplate = getPromptTemplate(PROMPT_IDS.NP_AGENT_CHARACTER_PROFILE, job.data.locale)
-  const locationPromptTemplate = getPromptTemplate(PROMPT_IDS.NP_SELECT_LOCATION, job.data.locale)
-  const propPromptTemplate = getPromptTemplate(PROMPT_IDS.NP_SELECT_PROP, job.data.locale)
-  const clipPromptTemplate = getPromptTemplate(PROMPT_IDS.NP_AGENT_CLIP, job.data.locale)
-  const screenplayPromptTemplate = getPromptTemplate(PROMPT_IDS.NP_SCREENPLAY_CONVERSION, job.data.locale)
+  const promptTemplates = getStoryToScriptPromptTemplates(job.data.locale || 'zh')
   const maxLength = 30000
   const content = mergedContent.length > maxLength ? mergedContent.slice(0, maxLength) : mergedContent
   const payloadMeta = typeof payload.meta === 'object' && payload.meta !== null
@@ -177,73 +149,19 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
     },
   })
 
-  const runStep = async (
-    meta: StoryToScriptStepMeta,
-    prompt: string,
-    action: string,
-    _maxOutputTokens: number,
-  ): Promise<StoryToScriptStepOutput> => {
-    void _maxOutputTokens
-    const stepAttempt = meta.stepAttempt
-      || (retryStepKey && meta.stepId === retryStepKey ? retryStepAttempt : 1)
-    await assertRunActive(`story_to_script_step:${meta.stepId}`)
-    const progress = 15 + Math.min(55, Math.floor((meta.stepIndex / Math.max(1, meta.stepTotal)) * 55))
-    await reportTaskProgress(job, progress, {
-      stage: 'story_to_script_step',
-      stageLabel: 'progress.stage.storyToScriptStep',
-      displayMode: 'detail',
-      message: meta.stepTitle,
-      stepId: meta.stepId,
-      stepAttempt,
-      stepTitle: meta.stepTitle,
-      stepIndex: meta.stepIndex,
-      stepTotal: meta.stepTotal,
-      dependsOn: Array.isArray(meta.dependsOn) ? meta.dependsOn : [],
-      groupId: meta.groupId || null,
-      parallelKey: meta.parallelKey || null,
-      retryable: meta.retryable !== false,
-      blockedBy: Array.isArray(meta.blockedBy) ? meta.blockedBy : [],
-    })
-
-    logAIAnalysis(job.data.userId, 'worker', projectId, project.name, {
-      action: `STORY_TO_SCRIPT_PROMPT:${action}`,
-      input: { stepId: meta.stepId, stepTitle: meta.stepTitle, prompt },
-      model,
-    })
-
-    const output = await executeAiTextStep({
-      userId: job.data.userId,
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      projectId,
-      action,
-      meta: {
-        ...meta,
-        stepAttempt,
-      },
-      temperature,
-      reasoning,
-      reasoningEffort,
-    })
-    await callbacks.flush()
-
-    logAIAnalysis(job.data.userId, 'worker', projectId, project.name, {
-      action: `STORY_TO_SCRIPT_OUTPUT:${action}`,
-      output: {
-        stepId: meta.stepId,
-        stepTitle: meta.stepTitle,
-        rawText: output.text,
-        textLength: output.text.length,
-        reasoningLength: output.reasoning.length,
-      },
-      model,
-    })
-
-    return {
-      text: output.text,
-      reasoning: output.reasoning,
-    }
-  }
+  const runStep = createStoryToScriptRunStep({
+    job,
+    projectId,
+    projectName: project.name,
+    model,
+    temperature,
+    reasoning,
+    reasoningEffort,
+    retryStepKey,
+    retryStepAttempt,
+    callbacks,
+    assertRunActive,
+  })
 
   const leaseResult = await withWorkflowRunLease({
     runId,
@@ -257,344 +175,40 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
       })
 
       if (retryClipId) {
-        const splitArtifacts = await listArtifacts({
+        return await runStoryToScriptRetryStep({
+          job,
+          callbacks,
           runId,
-          artifactType: 'clips.split',
-          limit: 1,
-        })
-        const latestSplit = splitArtifacts[0]
-        const splitPayload = latestSplit && typeof latestSplit.payload === 'object' && latestSplit.payload !== null
-          ? (latestSplit.payload as Record<string, unknown>)
-          : null
-        if (!splitPayload) {
-          throw new Error('missing clips.split artifact for retry')
-        }
-
-        const clipRows = Array.isArray(splitPayload.clipList) ? splitPayload.clipList : []
-        const retryClip = clipRows.find((item) => {
-          if (!item || typeof item !== 'object' || Array.isArray(item)) return false
-          return asString((item as Record<string, unknown>).id).trim() === retryClipId
-        }) as Record<string, unknown> | undefined
-        if (!retryClip) {
-          throw new Error(`retry clip not found in artifact: ${retryClipId}`)
-        }
-
-        const clipContent = asString(retryClip.content)
-        if (!clipContent.trim()) {
-          throw new Error(`retry clip content is empty: ${retryClipId}`)
-        }
-
-        const screenplayPrompt = screenplayPromptTemplate
-          .replace('{clip_content}', clipContent)
-          .replace('{locations_lib_name}', asString(splitPayload.locationsLibName) || '无')
-          .replace('{characters_lib_name}', asString(splitPayload.charactersLibName) || '无')
-          .replace('{props_lib_name}', asString(splitPayload.propsLibName) || '无')
-          .replace('{characters_introduction}', asString(splitPayload.charactersIntroduction) || '暂无角色介绍')
-          .replace('{clip_id}', retryClipId)
-
-        const stepMeta: StoryToScriptStepMeta = {
-          stepId: retryStepKey,
-          stepAttempt: retryStepAttempt,
-          stepTitle: 'progress.streamStep.screenplayConversion',
-          stepIndex: 1,
-          stepTotal: 1,
-          dependsOn: ['split_clips'],
-          retryable: true,
-        }
-        let screenplay: AnyObj | null = null
-        try {
-          const stepOutput = await (async () => {
-            try {
-              return await withInternalLLMStreamCallbacks(
-                callbacks,
-                async () => await runStep(stepMeta, screenplayPrompt, 'screenplay_conversion', 2200),
-              )
-            } finally {
-              await callbacks.flush()
-            }
-          })()
-          screenplay = parseScreenplayPayload(stepOutput.text)
-        } catch (error) {
-          await createArtifact({
-            runId,
-            stepKey: retryStepKey,
-            artifactType: 'screenplay.clip',
-            refId: retryClipId,
-            payload: {
-              clipId: retryClipId,
-              success: false,
-              error: error instanceof Error ? error.message : String(error),
-            },
-          })
-          throw error
-        }
-        if (!screenplay) {
-          throw new Error('retry screenplay output is empty')
-        }
-        await createArtifact({
-          runId,
-          stepKey: retryStepKey,
-          artifactType: 'screenplay.clip',
-          refId: retryClipId,
-          payload: {
-            clipId: retryClipId,
-            success: true,
-            sceneCount: Array.isArray(screenplay.scenes) ? screenplay.scenes.length : 0,
-            screenplay,
-          },
-        })
-
-        await prisma.$transaction(async (tx) => {
-          let clipRecord = await tx.novelPromotionClip.findFirst({
-            where: {
-              episodeId,
-              startText: asString(retryClip.startText) || null,
-              endText: asString(retryClip.endText) || null,
-            },
-            select: { id: true },
-          })
-          if (!clipRecord) {
-            const clipModel = tx.novelPromotionClip as unknown as {
-              create: (args: { data: Record<string, unknown>; select: { id: true } }) => Promise<{ id: string }>
-            }
-            clipRecord = await clipModel.create({
-              data: {
-                episodeId,
-                startText: asString(retryClip.startText) || null,
-                endText: asString(retryClip.endText) || null,
-                summary: asString(retryClip.summary),
-                location: asString(retryClip.location) || null,
-                characters: Array.isArray(retryClip.characters) ? JSON.stringify(retryClip.characters) : null,
-                props: Array.isArray(retryClip.props) ? JSON.stringify(retryClip.props) : null,
-                content: clipContent,
-              },
-              select: { id: true },
-            })
-          }
-          await tx.novelPromotionClip.update({
-            where: { id: clipRecord.id },
-            data: {
-              screenplay: JSON.stringify(screenplay),
-            },
-          })
-        })
-
-        await reportTaskProgress(job, 96, {
-          stage: 'story_to_script_persist_done',
-          stageLabel: 'progress.stage.storyToScriptPersistDone',
-          displayMode: 'detail',
-          message: 'retry step completed',
-          stepId: retryStepKey,
-          stepAttempt: retryStepAttempt,
-          stepTitle: 'progress.streamStep.screenplayConversion',
-          stepIndex: 1,
-          stepTotal: 1,
-        })
-
-        return {
-          episodeId,
-          clipCount: 1,
-          screenplaySuccessCount: 1,
-          screenplayFailedCount: 0,
-          persistedCharacters: 0,
-          persistedLocations: 0,
-          persistedClips: 1,
           retryStepKey,
-        }
-      }
-
-      const result: StoryToScriptOrchestratorResult = await (async () => {
-        try {
-          return await withInternalLLMStreamCallbacks(
-            callbacks,
-            async () => await runStoryToScriptOrchestrator({
-              concurrency: workflowConcurrency.analysis,
-              content,
-              baseCharacters: (novelData.characters || []).map((item) => item.name),
-              baseLocations: (novelData.locations || [])
-                .filter((item) => readAssetKind(item as unknown as Record<string, unknown>) !== 'prop')
-                .map((item) => item.name),
-              baseProps: (novelData.locations || [])
-                .filter((item) => readAssetKind(item as unknown as Record<string, unknown>) === 'prop')
-                .map((item) => item.name),
-              baseCharacterIntroductions: (novelData.characters || []).map((item) => ({
-                name: item.name,
-                introduction: item.introduction || '',
-              })),
-              promptTemplates: {
-                characterPromptTemplate,
-                locationPromptTemplate,
-                propPromptTemplate,
-                clipPromptTemplate,
-                screenplayPromptTemplate,
-              },
-              runStep,
-            }),
-          )
-        } finally {
-          await callbacks.flush()
-        }
-      })()
-
-      await createArtifact({
-        runId,
-        stepKey: 'analyze_characters',
-        artifactType: 'analysis.characters',
-        refId: episodeId,
-        payload: {
-          characters: result.analyzedCharacters,
-          raw: result.charactersObject,
-        },
-      })
-      await createArtifact({
-        runId,
-        stepKey: 'analyze_locations',
-        artifactType: 'analysis.locations',
-        refId: episodeId,
-        payload: {
-          locations: result.analyzedLocations,
-          raw: result.locationsObject,
-        },
-      })
-      await createArtifact({
-        runId,
-        stepKey: 'analyze_props',
-        artifactType: 'analysis.props',
-        refId: episodeId,
-        payload: {
-          props: result.analyzedProps,
-          raw: result.propsObject,
-        },
-      })
-      await createArtifact({
-        runId,
-        stepKey: 'split_clips',
-        artifactType: 'clips.split',
-        refId: episodeId,
-        payload: {
-          clipList: result.clipList,
-          charactersLibName: result.charactersLibName,
-          locationsLibName: result.locationsLibName,
-          propsLibName: result.propsLibName,
-          charactersIntroduction: result.charactersIntroduction,
-        },
-      })
-      for (const screenplayResult of result.screenplayResults) {
-        await createArtifact({
-          runId,
-          stepKey: `screenplay_${screenplayResult.clipId}`,
-          artifactType: 'screenplay.clip',
-          refId: screenplayResult.clipId,
-          payload: {
-            ...screenplayResult,
-          },
-        })
-      }
-
-      if (result.summary.screenplayFailedCount > 0) {
-        const failed = result.screenplayResults.filter((item) => !item.success)
-        const preview = failed
-          .slice(0, 3)
-          .map((item) => `${item.clipId}:${item.error || 'unknown error'}`)
-          .join(' | ')
-        throw new Error(
-          `STORY_TO_SCRIPT_PARTIAL_FAILED: ${result.summary.screenplayFailedCount}/${result.summary.clipCount} screenplay steps failed. ${preview}`,
-        )
-      }
-
-      await reportTaskProgress(job, 80, {
-        stage: 'story_to_script_persist',
-        stageLabel: 'progress.stage.storyToScriptPersist',
-        displayMode: 'detail',
-      })
-      await assertRunActive('story_to_script_persist')
-
-      const episodeStillExists = await prisma.novelPromotionEpisode.findUnique({
-        where: { id: episodeId },
-        select: { id: true },
-      })
-      if (!episodeStillExists) {
-        throw new Error(`NOT_FOUND: Episode ${episodeId} was deleted while the task was running`)
-      }
-
-      const existingCharacterNames = new Set<string>(
-        (novelData.characters || []).map((item) => String(item.name || '').toLowerCase()),
-      )
-      const existingLocationNames = new Set<string>(
-        (novelData.locations || [])
-          .filter((item) => readAssetKind(item as unknown as Record<string, unknown>) !== 'prop')
-          .map((item) => String(item.name || '').toLowerCase()),
-      )
-      const existingPropNames = new Set<string>(
-        (novelData.locations || [])
-          .filter((item) => readAssetKind(item as unknown as Record<string, unknown>) === 'prop')
-          .map((item) => String(item.name || '').toLowerCase()),
-      )
-
-      const persistedResult = await prisma.$transaction(async (tx) => {
-        const createdCharacters = await persistAnalyzedCharacters({
-          projectInternalId: novelData.id,
-          existingNames: existingCharacterNames,
-          analyzedCharacters: result.analyzedCharacters,
-          db: tx,
-        })
-
-        const createdLocations = await persistAnalyzedLocations({
-          projectInternalId: novelData.id,
-          existingNames: existingLocationNames,
-          analyzedLocations: result.analyzedLocations,
-          db: tx,
-        })
-        const createdProps = await persistAnalyzedProps({
-          projectInternalId: novelData.id,
-          existingNames: existingPropNames,
-          analyzedProps: result.analyzedProps,
-          db: tx,
-        })
-
-        const createdClipRows = await persistClips({
+          retryStepAttempt,
+          retryClipId,
           episodeId,
-          clipList: result.clipList,
-          db: tx,
+          screenplayPromptTemplate: promptTemplates.screenplayPromptTemplate,
+          runStep,
         })
-        const clipIdMap = new Map(createdClipRows.map((item) => [item.clipKey, item.id]))
-
-        for (const screenplayResult of result.screenplayResults) {
-          if (!screenplayResult.success || !screenplayResult.screenplay) continue
-          const clipRecordId = resolveClipRecordId(clipIdMap, screenplayResult.clipId)
-          if (!clipRecordId) continue
-          await tx.novelPromotionClip.update({
-            where: { id: clipRecordId },
-            data: {
-              screenplay: JSON.stringify(screenplayResult.screenplay),
-            },
-          })
-        }
-
-        return {
-          createdCharacters,
-          createdLocations,
-          createdProps,
-          createdClipRows,
-        }
-      })
-
-      await reportTaskProgress(job, 96, {
-        stage: 'story_to_script_persist_done',
-        stageLabel: 'progress.stage.storyToScriptPersistDone',
-        displayMode: 'detail',
-      })
-
-      return {
-        episodeId,
-        clipCount: result.summary.clipCount,
-        screenplaySuccessCount: result.summary.screenplaySuccessCount,
-        screenplayFailedCount: result.summary.screenplayFailedCount,
-        persistedCharacters: persistedResult.createdCharacters.length,
-        persistedLocations: persistedResult.createdLocations.length,
-        persistedProps: persistedResult.createdProps.length,
-        persistedClips: persistedResult.createdClipRows.length,
       }
+
+      const baseAssets = buildStoryToScriptBaseAssets({
+        characters: novelData.characters || [],
+        locations: (novelData.locations || []) as Array<Record<string, unknown> & { name: string }>,
+      })
+      return await runStoryToScriptMainFlow({
+        job,
+        callbacks,
+        runId,
+        episodeId,
+        content,
+        concurrency: workflowConcurrency.analysis,
+        ...baseAssets,
+        promptTemplates,
+        runStep,
+        assertRunActive,
+        novelData: {
+          id: novelData.id,
+          characters: novelData.characters || [],
+          locations: (novelData.locations || []) as Array<Record<string, unknown> & { name: string }>,
+        },
+      })
     },
   })
 

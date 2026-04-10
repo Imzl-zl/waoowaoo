@@ -10,75 +10,26 @@ import {
   requestJsonWithError,
   requestVoidWithError,
 } from './mutation-shared'
+import { GLOBAL_ASSET_PROJECT_ID } from './asset-hub-mutations-shared'
 import {
-  GLOBAL_ASSET_PROJECT_ID,
-  invalidateGlobalCharacters,
-} from './asset-hub-mutations-shared'
+  applyCharacterSelection,
+  captureCharacterQuerySnapshots,
+  createInvalidateGlobalCharactersCallback,
+  restoreCharacterQuerySnapshots,
+  type DeleteCharacterContext,
+  type SelectCharacterImageContext,
+} from './asset-hub-character-mutations.shared'
 
-interface SelectCharacterImageContext {
-  previousQueries: Array<{
-    queryKey: readonly unknown[]
-    data: GlobalCharacter[] | undefined
-  }>
-  targetKey: string
-  requestId: number
-}
-
-interface DeleteCharacterContext {
-  previousQueries: Array<{
-    queryKey: readonly unknown[]
-    data: GlobalCharacter[] | undefined
-  }>
-}
-
-function applyCharacterSelection(
-  characters: GlobalCharacter[] | undefined,
-  characterId: string,
-  appearanceIndex: number,
-  imageIndex: number | null,
-): GlobalCharacter[] | undefined {
-  if (!characters) return characters
-  return characters.map((character) => {
-    if (character.id !== characterId) return character
-    return {
-      ...character,
-      appearances: (character.appearances || []).map((appearance) => {
-        if (appearance.appearanceIndex !== appearanceIndex) return appearance
-        const selectedUrl =
-          imageIndex !== null && imageIndex >= 0
-            ? (appearance.imageUrls[imageIndex] ?? null)
-            : null
-        return {
-          ...appearance,
-          selectedIndex: imageIndex,
-          imageUrl: selectedUrl ?? appearance.imageUrl ?? null,
-        }
-      }),
-    }
-  })
-}
-
-function captureCharacterQuerySnapshots(queryClient: ReturnType<typeof useQueryClient>) {
-  return queryClient
-    .getQueriesData<GlobalCharacter[]>({
-      queryKey: queryKeys.globalAssets.characters(),
-      exact: false,
-    })
-    .map(([queryKey, data]) => ({ queryKey, data }))
-}
-
-function restoreCharacterQuerySnapshots(
-  queryClient: ReturnType<typeof useQueryClient>,
-  snapshots: Array<{ queryKey: readonly unknown[]; data: GlobalCharacter[] | undefined }>,
-) {
-  snapshots.forEach((snapshot) => {
-    queryClient.setQueryData(snapshot.queryKey, snapshot.data)
-  })
-}
+export {
+  useDeleteCharacterAppearance,
+  useUndoCharacterImage,
+  useUploadCharacterImage,
+  useUploadCharacterVoice,
+} from './asset-hub-character-mutations.base'
 
 export function useGenerateCharacterImage() {
   const queryClient = useQueryClient()
-  const invalidateCharacters = () => invalidateGlobalCharacters(queryClient)
+  const invalidateCharacters = createInvalidateGlobalCharactersCallback(queryClient)
 
   return useMutation({
     mutationFn: async ({
@@ -125,7 +76,7 @@ export function useGenerateCharacterImage() {
 
 export function useModifyCharacterImage() {
   const queryClient = useQueryClient()
-  const invalidateCharacters = () => invalidateGlobalCharacters(queryClient)
+  const invalidateCharacters = createInvalidateGlobalCharactersCallback(queryClient)
 
   return useMutation({
     mutationFn: async ({
@@ -176,7 +127,7 @@ export function useModifyCharacterImage() {
 export function useSelectCharacterImage() {
   const queryClient = useQueryClient()
   const latestRequestIdByTargetRef = useRef<Record<string, number>>({})
-  const invalidateCharacters = () => invalidateGlobalCharacters(queryClient)
+  const invalidateCharacters = createInvalidateGlobalCharactersCallback(queryClient)
 
   return useMutation({
     mutationFn: async ({
@@ -246,66 +197,9 @@ export function useSelectCharacterImage() {
   })
 }
 
-export function useUndoCharacterImage() {
-  const queryClient = useQueryClient()
-  const invalidateCharacters = () => invalidateGlobalCharacters(queryClient)
-
-  return useMutation({
-    mutationFn: async ({ characterId, appearanceIndex }: { characterId: string; appearanceIndex: number }) => {
-      return await requestJsonWithError(`/api/assets/${characterId}/revert-render`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scope: 'global',
-          kind: 'character',
-          appearanceIndex,
-        }),
-      }, 'Failed to undo image')
-    },
-    onSuccess: invalidateCharacters,
-  })
-}
-
-export function useUploadCharacterImage() {
-  const queryClient = useQueryClient()
-  const invalidateCharacters = () => invalidateGlobalCharacters(queryClient)
-
-  return useMutation({
-    mutationFn: async ({
-      file,
-      characterId,
-      appearanceIndex,
-      labelText,
-      imageIndex,
-    }: {
-      file: File
-      characterId: string
-      appearanceIndex: number
-      labelText: string
-      imageIndex?: number
-    }) => {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('type', 'character')
-      formData.append('id', characterId)
-      formData.append('appearanceIndex', appearanceIndex.toString())
-      formData.append('labelText', labelText)
-      if (imageIndex !== undefined) {
-        formData.append('imageIndex', imageIndex.toString())
-      }
-
-      return await requestJsonWithError('/api/asset-hub/upload-image', {
-        method: 'POST',
-        body: formData,
-      }, 'Failed to upload image')
-    },
-    onSuccess: invalidateCharacters,
-  })
-}
-
 export function useDeleteCharacter() {
   const queryClient = useQueryClient()
-  const invalidateCharacters = () => invalidateGlobalCharacters(queryClient)
+  const invalidateCharacters = createInvalidateGlobalCharactersCallback(queryClient)
 
   return useMutation({
     mutationFn: async (characterId: string) => {
@@ -337,40 +231,5 @@ export function useDeleteCharacter() {
       restoreCharacterQuerySnapshots(queryClient, context.previousQueries)
     },
     onSettled: invalidateCharacters,
-  })
-}
-
-export function useDeleteCharacterAppearance() {
-  const queryClient = useQueryClient()
-  const invalidateCharacters = () => invalidateGlobalCharacters(queryClient)
-
-  return useMutation({
-    mutationFn: async ({ characterId, appearanceIndex }: { characterId: string; appearanceIndex: number }) => {
-      await requestVoidWithError(
-        `/api/asset-hub/appearances?characterId=${characterId}&appearanceIndex=${appearanceIndex}`,
-        { method: 'DELETE' },
-        'Failed to delete appearance',
-      )
-    },
-    onSuccess: invalidateCharacters,
-  })
-}
-
-export function useUploadCharacterVoice() {
-  const queryClient = useQueryClient()
-  const invalidateCharacters = () => invalidateGlobalCharacters(queryClient)
-
-  return useMutation({
-    mutationFn: async ({ file, characterId }: { file: File; characterId: string }) => {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('characterId', characterId)
-
-      return await requestJsonWithError('/api/asset-hub/character-voice', {
-        method: 'POST',
-        body: formData,
-      }, 'Failed to upload voice')
-    },
-    onSuccess: invalidateCharacters,
   })
 }

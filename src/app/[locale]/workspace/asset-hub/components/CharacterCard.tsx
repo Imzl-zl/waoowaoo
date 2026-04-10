@@ -1,7 +1,6 @@
 'use client'
 import { logInfo as _ulogInfo } from '@/lib/logging/core'
 import { resolveErrorDisplay } from '@/lib/errors/display'
-
 import { useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import {
@@ -23,6 +22,7 @@ import { PRIMARY_APPEARANCE_INDEX } from '@/lib/constants'
 import { getImageGenerationCountOptions } from '@/lib/image-generation/count'
 import { useImageGenerationCount } from '@/lib/image-generation/use-image-generation-count'
 import { AppIcon } from '@/components/ui/icons'
+import { CharacterCardDeleteControls } from './CharacterCardDeleteControls'
 
 interface Appearance {
     id: string
@@ -57,7 +57,6 @@ interface CharacterCardProps {
 }
 
 export function CharacterCard({ character, onImageClick, onImageEdit, onVoiceDesign, onEdit, onVoiceSelect }: CharacterCardProps) {
-    // 🔥 使用 mutation hooks
     const generateImage = useGenerateCharacterImage()
     const selectImage = useSelectCharacterImage()
     const undoImage = useUndoCharacterImage()
@@ -77,12 +76,10 @@ export function CharacterCard({ character, onImageClick, onImageEdit, onVoiceDes
     const [showDeleteMenu, setShowDeleteMenu] = useState(false)
     const latestSelectRequestRef = useRef(0)
 
-    // 计算属性
     const appearance = character.appearances[activeAppearance] || character.appearances[0]
     const isPrimaryAppearance = appearance?.appearanceIndex === PRIMARY_APPEARANCE_INDEX
     const appearanceCount = character.appearances.length
 
-    // URL 验证函数
     const isValidUrl = (url: string | null | undefined): boolean => {
         if (!url || url.trim() === '') return false
         if (url.startsWith('/')) return true
@@ -121,7 +118,6 @@ export function CharacterCard({ character, onImageClick, onImageEdit, onVoiceDes
         })
         : null
 
-    // 生成图片
     const handleGenerate = (count = generationCount) => {
         generateImage.mutate(
             {
@@ -134,7 +130,6 @@ export function CharacterCard({ character, onImageClick, onImageEdit, onVoiceDes
         )
     }
 
-    // 选择图片（依赖 query 缓存乐观更新）
     const handleSelectImage = (imageIndex: number | null) => {
         if (imageIndex === effectiveSelectedIndex) return
         const requestId = latestSelectRequestRef.current + 1
@@ -152,7 +147,6 @@ export function CharacterCard({ character, onImageClick, onImageEdit, onVoiceDes
         })
     }
 
-    // 确认选择
     const handleConfirmSelection = () => {
         const requestId = latestSelectRequestRef.current + 1
         latestSelectRequestRef.current = requestId
@@ -169,12 +163,10 @@ export function CharacterCard({ character, onImageClick, onImageEdit, onVoiceDes
         })
     }
 
-    // 撤回
     const handleUndo = () => {
         undoImage.mutate({ characterId: character.id, appearanceIndex: appearance.appearanceIndex })
     }
 
-    // 上传图片
     const handleUpload = () => {
         const file = fileInputRef.current?.files?.[0]
         if (!file) return
@@ -196,14 +188,12 @@ export function CharacterCard({ character, onImageClick, onImageEdit, onVoiceDes
         )
     }
 
-    // 删除角色
     const handleDelete = () => {
         deleteCharacter.mutate(character.id, {
             onSettled: () => setShowDeleteConfirm(false)
         })
     }
 
-    // 删除子形象
     const handleDeleteAppearance = () => {
         deleteAppearance.mutate(
             { characterId: character.id, appearanceIndex: appearance.appearanceIndex },
@@ -214,7 +204,6 @@ export function CharacterCard({ character, onImageClick, onImageEdit, onVoiceDes
         )
     }
 
-    // 上传音色
     const handleUploadVoice = () => {
         const file = voiceInputRef.current?.files?.[0]
         if (!file) return
@@ -229,15 +218,11 @@ export function CharacterCard({ character, onImageClick, onImageEdit, onVoiceDes
         )
     }
 
-    // 多图选择模式
     if (hasMultipleImages) {
         return (
             <div className="col-span-3 glass-surface p-4 relative">
-                {/* 隐藏输入 */}
                 <input ref={fileInputRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
                 <input ref={voiceInputRef} type="file" accept="audio/*" onChange={handleUploadVoice} className="hidden" />
-
-                {/* 顶部：名字 + 操作 */}
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-[var(--glass-text-primary)]">{character.name}</span>
@@ -357,29 +342,22 @@ export function CharacterCard({ character, onImageClick, onImageEdit, onVoiceDes
                     compact={true}
                 />
 
-                {/* 删除菜单 */}
-                {showDeleteMenu && appearanceCount > 1 && (
-                    <>
-                        <div className="fixed inset-0 z-10" onClick={() => setShowDeleteMenu(false)} />
-                        <div className="absolute right-4 top-12 z-20 glass-surface-modal py-1 min-w-[120px]">
-                            <button onClick={handleDeleteAppearance} className="glass-btn-base glass-btn-soft w-full justify-start rounded-none px-3 py-1.5 text-left text-xs">{tAssets('image.deleteThis')}</button>
-                            <button onClick={() => { setShowDeleteMenu(false); setShowDeleteConfirm(true) }} className="glass-btn-base glass-btn-soft w-full justify-start rounded-none px-3 py-1.5 text-left text-xs text-[var(--glass-tone-danger-fg)]">{tAssets('character.deleteWhole')}</button>
-                        </div>
-                    </>
-                )}
-
-                {/* 删除确认对话框 - 多图模式也需要 */}
-                {showDeleteConfirm && (
-                    <div className="fixed inset-0 glass-overlay flex items-center justify-center z-50">
-                        <div className="glass-surface-modal p-4 m-4 max-w-sm">
-                            <p className="mb-4 text-sm text-[var(--glass-text-primary)]">{t('confirmDeleteCharacter')}</p>
-                            <div className="flex gap-2 justify-end">
-                                <button onClick={() => setShowDeleteConfirm(false)} className="glass-btn-base glass-btn-secondary px-3 py-1.5 rounded-lg text-sm">{t('cancel')}</button>
-                                <button onClick={handleDelete} className="glass-btn-base glass-btn-danger px-3 py-1.5 rounded-lg text-sm">{t('delete')}</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                <CharacterCardDeleteControls
+                    showDeleteConfirm={showDeleteConfirm}
+                    showDeleteMenu={showDeleteMenu}
+                    appearanceCount={appearanceCount}
+                    menuClassName="absolute right-4 top-12 z-20 glass-surface-modal py-1 min-w-[120px]"
+                    onCloseDeleteConfirm={() => setShowDeleteConfirm(false)}
+                    onDelete={handleDelete}
+                    onCloseDeleteMenu={() => setShowDeleteMenu(false)}
+                    onDeleteAppearance={handleDeleteAppearance}
+                    onOpenDeleteConfirm={() => {
+                        setShowDeleteMenu(false)
+                        setShowDeleteConfirm(true)
+                    }}
+                    t={t}
+                    tAssets={tAssets}
+                />
             </div>
         )
     }
@@ -492,29 +470,22 @@ export function CharacterCard({ character, onImageClick, onImageEdit, onVoiceDes
                 />
             </div>
 
-            {/* 删除确认 */}
-            {showDeleteConfirm && (
-                <div className="absolute inset-0 glass-overlay flex items-center justify-center z-20">
-                    <div className="glass-surface-modal p-4 m-4">
-                        <p className="mb-4 text-sm text-[var(--glass-text-primary)]">{t('confirmDeleteCharacter')}</p>
-                        <div className="flex gap-2 justify-end">
-                            <button onClick={() => setShowDeleteConfirm(false)} className="glass-btn-base glass-btn-secondary px-3 py-1.5 rounded-lg text-sm">{t('cancel')}</button>
-                            <button onClick={handleDelete} className="glass-btn-base glass-btn-danger px-3 py-1.5 rounded-lg text-sm">{t('delete')}</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* 删除菜单 */}
-            {showDeleteMenu && appearanceCount > 1 && (
-                <>
-                    <div className="fixed inset-0 z-10" onClick={() => setShowDeleteMenu(false)} />
-                    <div className="absolute right-3 top-auto bottom-16 z-20 glass-surface-modal py-1 min-w-[120px]">
-                        <button onClick={handleDeleteAppearance} className="glass-btn-base glass-btn-soft w-full justify-start rounded-none px-3 py-1.5 text-left text-xs">{tAssets('image.deleteThis')}</button>
-                        <button onClick={() => { setShowDeleteMenu(false); setShowDeleteConfirm(true) }} className="glass-btn-base glass-btn-soft w-full justify-start rounded-none px-3 py-1.5 text-left text-xs text-[var(--glass-tone-danger-fg)]">{tAssets('character.deleteWhole')}</button>
-                    </div>
-                </>
-            )}
+            <CharacterCardDeleteControls
+                showDeleteConfirm={showDeleteConfirm}
+                showDeleteMenu={showDeleteMenu}
+                appearanceCount={appearanceCount}
+                menuClassName="absolute right-3 top-auto bottom-16 z-20 glass-surface-modal py-1 min-w-[120px]"
+                onCloseDeleteConfirm={() => setShowDeleteConfirm(false)}
+                onDelete={handleDelete}
+                onCloseDeleteMenu={() => setShowDeleteMenu(false)}
+                onDeleteAppearance={handleDeleteAppearance}
+                onOpenDeleteConfirm={() => {
+                    setShowDeleteMenu(false)
+                    setShowDeleteConfirm(true)
+                }}
+                t={t}
+                tAssets={tAssets}
+            />
         </div>
     )
 }

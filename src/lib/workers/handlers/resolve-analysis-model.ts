@@ -1,5 +1,5 @@
-import { prisma } from '@/lib/prisma'
 import { composeModelKey, parseModelKeyStrict } from '@/lib/model-config-contract'
+import { readUserPreferenceAnalysisModel } from '@/lib/user-preference/persistence'
 
 type ResolveAnalysisModelInput = {
   userId: string
@@ -23,10 +23,7 @@ export async function resolveAnalysisModel(input: ResolveAnalysisModelInput): Pr
   const modelFromProject = normalizeModelKey(input.projectAnalysisModel)
   if (modelFromProject) return modelFromProject
 
-  const userPreference = await prisma.userPreference.findUnique({
-    where: { userId: input.userId },
-    select: { analysisModel: true },
-  })
+  const userPreference = await readUserPreferenceAnalysisModel(input.userId)
   const modelFromUserPreference = normalizeModelKey(userPreference?.analysisModel)
   if (modelFromUserPreference) return modelFromUserPreference
 

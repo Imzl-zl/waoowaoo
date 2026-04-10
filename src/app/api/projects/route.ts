@@ -5,6 +5,7 @@ import { apiHandler, ApiError } from '@/lib/api-errors'
 import { toMoneyNumber } from '@/lib/billing/money'
 import { isArtStyleValue } from '@/lib/constants'
 import { resolveTaskLocale } from '@/lib/task/resolve-locale'
+import { readUserPreferenceProjectDefaults } from '@/lib/user-preference/persistence'
 import {
   formatProjectValidationIssue,
   normalizeProjectDraft,
@@ -204,9 +205,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
   const { name, description } = normalizeProjectDraft(draft)
 
   // 获取用户偏好配置
-  const userPreference = await prisma.userPreference.findUnique({
-    where: { userId: session.user.id }
-  })
+  const userPreference = await readUserPreferenceProjectDefaults(session.user.id)
 
   // 创建基础项目
   const project = await prisma.project.create({

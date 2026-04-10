@@ -7,7 +7,6 @@
  * 3) 运行时只从配置中心读取 provider 与密钥
  */
 
-import { prisma } from './prisma'
 import { decryptApiKey } from './crypto-utils'
 import {
   composeModelKey,
@@ -19,6 +18,7 @@ import type {
   OpenAICompatMediaTemplateSource,
 } from './openai-compat-media-template'
 import { validateOpenAICompatMediaTemplate } from './user-api/model-template/validator'
+import { readUserApiConfigExistingPreference } from './user-api/api-config/persistence'
 
 export interface CustomModel {
   modelId: string
@@ -289,13 +289,7 @@ function pickProviderStrict(
 }
 
 async function readUserConfig(userId: string): Promise<{ models: CustomModel[]; providers: CustomProvider[] }> {
-  const pref = await prisma.userPreference.findUnique({
-    where: { userId },
-    select: {
-      customModels: true,
-      customProviders: true,
-    },
-  })
+  const pref = await readUserApiConfigExistingPreference(userId)
 
   return {
     models: parseCustomModels(pref?.customModels),
@@ -498,10 +492,7 @@ export async function getLipSyncApiKey(userId: string, model?: string | null): P
  * 检查用户是否有任意 API 配置
  */
 export async function hasApiConfig(userId: string): Promise<boolean> {
-  const pref = await prisma.userPreference.findUnique({
-    where: { userId },
-    select: { customProviders: true },
-  })
+  const pref = await readUserApiConfigExistingPreference(userId)
 
   const providers = parseCustomProviders(pref?.customProviders)
   return providers.some((provider) => !!provider.apiKey)

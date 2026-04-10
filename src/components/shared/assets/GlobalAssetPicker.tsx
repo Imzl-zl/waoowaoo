@@ -8,6 +8,12 @@ import { resolveTaskPresentationState } from '@/lib/task/presentation'
 import { MediaImageWithLoading } from '@/components/media/MediaImageWithLoading'
 import { AppIcon } from '@/components/ui/icons'
 import { apiFetch } from '@/lib/api-fetch'
+import {
+  GlobalAssetPickerEmptyState,
+  GlobalAssetPickerFooter,
+  GlobalAssetPickerHeader,
+  GlobalAssetPickerSearch,
+} from './GlobalAssetPickerChrome'
 import type {
   AssetSummary,
   CharacterAssetSummary,
@@ -49,32 +55,6 @@ function getVisualAssetPreview(asset: LocationAssetSummary | PropAssetSummary): 
         || targetVariant.renders[0]?.imageUrl
         || null
 }
-
-// 内联 SVG 图标组件
-const XMarkIcon = ({ className }: { className?: string }) => (
-    <AppIcon name="close" className={className} />
-)
-
-const MagnifyingGlassIcon = ({ className }: { className?: string }) => (
-    <AppIcon name="search" className={className} />
-)
-
-const UserIcon = ({ className }: { className?: string }) => (
-    <AppIcon name="userAlt" className={className} />
-)
-
-const PhotoIcon = ({ className }: { className?: string }) => (
-    <AppIcon name="image" className={className} />
-)
-
-const CheckCircleIcon = ({ className }: { className?: string }) => (
-    <AppIcon name="badgeCheck" className={className} />
-)
-
-
-const MicrophoneIcon = ({ className }: { className?: string }) => (
-    <AppIcon name="mic" className={className} />
-)
 
 export default function GlobalAssetPicker({
     isOpen,
@@ -272,49 +252,28 @@ export default function GlobalAssetPicker({
 
     return (
         <div className="fixed inset-0 glass-overlay flex items-center justify-center z-50">
-                <div className="glass-surface-modal w-[600px] max-h-[80vh] flex flex-col">
-                {/* 头部 */}
-                <div className="flex items-center justify-between px-6 py-4">
-                    <h2 className="text-lg font-semibold text-[var(--glass-text-primary)]">
-                        {type === 'character' ? t('selectCharacter') : type === 'location' ? t('selectLocation') : type === 'prop' ? t('selectProp') : t('selectVoice')}
-                    </h2>
-                    <button onClick={onClose} className="glass-btn-base glass-btn-soft text-[var(--glass-text-tertiary)]">
-                        <XMarkIcon className="w-5 h-5" />
-                    </button>
-                </div>
+            <div className="glass-surface-modal w-[600px] max-h-[80vh] flex flex-col">
+                <GlobalAssetPickerHeader
+                    title={type === 'character' ? t('selectCharacter') : type === 'location' ? t('selectLocation') : type === 'prop' ? t('selectProp') : t('selectVoice')}
+                    onClose={onClose}
+                />
+                <GlobalAssetPickerSearch
+                    value={searchQuery}
+                    placeholder={t('searchPlaceholder')}
+                    onChange={setSearchQuery}
+                />
 
-                {/* 搜索栏 */}
-                <div className="px-6 pb-3">
-                    <div className="relative">
-                        <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--glass-text-tertiary)]" />
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder={t('searchPlaceholder')}
-                            className="glass-input-base w-full pl-9 pr-4 py-2 text-sm"
-                        />
-                    </div>
-                </div>
-
-                {/* 资产列表 */}
                 <div className="flex-1 overflow-y-auto p-4">
                     {isLoading ? (
                         <div className="flex items-center justify-center h-40">
                             <TaskStatusInline state={loadingState} />
                         </div>
                     ) : hasNoAssets ? (
-                        <div className="flex flex-col items-center justify-center h-40 text-[var(--glass-text-tertiary)]">
-                            {type === 'character' ? (
-                                <UserIcon className="w-12 h-12 mb-2" />
-                            ) : type === 'location' || type === 'prop' ? (
-                                <PhotoIcon className="w-12 h-12 mb-2" />
-                            ) : (
-                                <MicrophoneIcon className="w-12 h-12 mb-2" />
-                            )}
-                            <p>{t('noAssets')}</p>
-                            <p className="text-sm mt-1">{t('createInAssetHub')}</p>
-                        </div>
+                        <GlobalAssetPickerEmptyState
+                            type={type}
+                            noAssetsText={t('noAssets')}
+                            createHintText={t('createInAssetHub')}
+                        />
                     ) : items.length === 0 ? (
                         <div className="flex items-center justify-center h-40 text-[var(--glass-text-tertiary)]">
                             <p>{t('noSearchResults')}</p>
@@ -333,12 +292,10 @@ export default function GlobalAssetPicker({
                                                 : 'border-[var(--glass-stroke-base)] hover:border-[var(--glass-stroke-focus)]'
                                                 }`}
                                         >
-                                            {/* 选中标记 */}
                                             {selectedId === char.id && (
-                                                <CheckCircleIcon className="absolute -top-2 -right-2 w-6 h-6 text-[var(--glass-tone-info-fg)] bg-[var(--glass-bg-surface)] rounded-full" />
+                                                <AppIcon name="badgeCheck" className="absolute -top-2 -right-2 w-6 h-6 text-[var(--glass-tone-info-fg)] bg-[var(--glass-bg-surface)] rounded-full" />
                                             )}
 
-                                            {/* 预览图 */}
                                             <div className="aspect-[3/2] rounded-lg overflow-hidden bg-[var(--glass-bg-muted)] mb-2 relative">
                                                 {charPreview ? (
                                                     <MediaImageWithLoading
@@ -353,12 +310,11 @@ export default function GlobalAssetPicker({
                                                     />
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center text-[var(--glass-text-tertiary)]">
-                                                        <PhotoIcon className="w-12 h-12" />
+                                                        <AppIcon name="image" className="w-12 h-12" />
                                                     </div>
                                                 )}
                                             </div>
 
-                                            {/* 名称 */}
                                             <div className="text-center">
                                                 <p className="font-medium text-sm text-[var(--glass-text-primary)] truncate">{char.name}</p>
                                             </div>
@@ -377,12 +333,10 @@ export default function GlobalAssetPicker({
                                                 : 'border-[var(--glass-stroke-base)] hover:border-[var(--glass-stroke-focus)]'
                                                 }`}
                                         >
-                                            {/* 选中标记 */}
                                             {selectedId === loc.id && (
-                                                <CheckCircleIcon className="absolute -top-2 -right-2 w-6 h-6 text-[var(--glass-tone-info-fg)] bg-[var(--glass-bg-surface)] rounded-full" />
+                                                <AppIcon name="badgeCheck" className="absolute -top-2 -right-2 w-6 h-6 text-[var(--glass-tone-info-fg)] bg-[var(--glass-bg-surface)] rounded-full" />
                                             )}
 
-                                            {/* 预览图 */}
                                             <div className="aspect-video rounded-lg overflow-hidden bg-[var(--glass-bg-muted)] mb-2 relative">
                                                 {locPreview ? (
                                                     <MediaImageWithLoading
@@ -397,12 +351,11 @@ export default function GlobalAssetPicker({
                                                     />
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center text-[var(--glass-text-tertiary)]">
-                                                        <PhotoIcon className="w-12 h-12" />
+                                                        <AppIcon name="image" className="w-12 h-12" />
                                                     </div>
                                                 )}
                                             </div>
 
-                                            {/* 名称 */}
                                             <div className="text-center">
                                                 <p className="font-medium text-sm text-[var(--glass-text-primary)] truncate">{loc.name}</p>
                                                 <p className="text-xs text-[var(--glass-text-secondary)] mt-1">
@@ -425,7 +378,7 @@ export default function GlobalAssetPicker({
                                                 }`}
                                         >
                                             {selectedId === prop.id && (
-                                                <CheckCircleIcon className="absolute -top-2 -right-2 w-6 h-6 text-[var(--glass-tone-info-fg)] bg-[var(--glass-bg-surface)] rounded-full" />
+                                                <AppIcon name="badgeCheck" className="absolute -top-2 -right-2 w-6 h-6 text-[var(--glass-tone-info-fg)] bg-[var(--glass-bg-surface)] rounded-full" />
                                             )}
                                             <div className="aspect-video rounded-lg overflow-hidden bg-[var(--glass-bg-muted)] mb-2 relative">
                                                 {propPreview ? (
@@ -441,7 +394,7 @@ export default function GlobalAssetPicker({
                                                     />
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center text-[var(--glass-text-tertiary)]">
-                                                        <PhotoIcon className="w-12 h-12" />
+                                                        <AppIcon name="image" className="w-12 h-12" />
                                                     </div>
                                                 )}
                                             </div>
@@ -455,7 +408,6 @@ export default function GlobalAssetPicker({
                                     )
                                 })
                             ) : (
-                                // 音色列表渲染 - 与资产中心 VoiceCard 风格统一
                                 filteredVoices.map((voice) => {
                                     const genderIcon = voice.voiceMeta.gender === 'male' ? 'M' : voice.voiceMeta.gender === 'female' ? 'F' : ''
                                     const previewVoiceUrl = voice.voiceMeta.customVoiceUrl
@@ -469,27 +421,23 @@ export default function GlobalAssetPicker({
                                                 : 'hover:ring-2 hover:ring-[var(--glass-focus-ring-strong)]'
                                                 }`}
                                         >
-                                            {/* 选中标记 */}
                                             {selectedId === voice.id && (
                                                 <div className="absolute top-2 right-2 w-6 h-6 glass-chip glass-chip-info rounded-full flex items-center justify-center z-10 p-0">
                                                     <AppIcon name="checkSolid" className="w-4 h-4 text-white" />
                                                 </div>
                                             )}
 
-                                            {/* 音色图标区域 - 与 VoiceCard 统一 */}
                                             <div className="relative bg-[var(--glass-bg-muted)] p-6 flex items-center justify-center">
                                                 <div className="w-16 h-16 rounded-full glass-surface-soft flex items-center justify-center">
-                                                    <MicrophoneIcon className="w-8 h-8 text-[var(--glass-tone-info-fg)]" />
+                                                    <AppIcon name="mic" className="w-8 h-8 text-[var(--glass-tone-info-fg)]" />
                                                 </div>
 
-                                                {/* 性别标签 */}
                                                 {genderIcon && (
                                                     <div className="absolute top-2 left-2 glass-chip glass-chip-neutral text-xs px-2 py-0.5 rounded-full">
                                                         {genderIcon}
                                                     </div>
                                                 )}
 
-                                                {/* 试听按钮 - 圆形，与 VoiceCard 统一 */}
                                                 {previewVoiceUrl && (
                                                     <button
                                                         onClick={(e) => handlePlayAudio(previewVoiceUrl, e)}
@@ -507,7 +455,6 @@ export default function GlobalAssetPicker({
                                                 )}
                                             </div>
 
-                                            {/* 信息区域 */}
                                             <div className="p-3">
                                                 <h3 className="font-medium text-[var(--glass-text-primary)] text-sm truncate">{voice.name}</h3>
                                                 {voice.voiceMeta.description && (
@@ -525,26 +472,17 @@ export default function GlobalAssetPicker({
                     )}
                 </div>
 
-                {/* 底部按钮 */}
-                <div className="flex justify-end gap-3 px-6 py-4 border-t border-[var(--glass-stroke-base)] bg-[var(--glass-bg-surface-strong)]">
-                    <button
-                        onClick={onClose}
-                        className="glass-btn-base glass-btn-secondary px-4 py-2 text-sm"
-                    >
-                        {t('cancel')}
-                    </button>
-                    <button
-                        onClick={handleConfirm}
-                        disabled={!selectedId || externalLoading}
-                        className="glass-btn-base glass-btn-primary px-4 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                        {externalLoading && <TaskStatusInline state={copyingState} className="text-white [&>span]:sr-only [&_svg]:text-white" />}
-                        {t('confirmCopy')}
-                    </button>
-                </div>
+                <GlobalAssetPickerFooter
+                    cancelLabel={t('cancel')}
+                    confirmLabel={t('confirmCopy')}
+                    loading={externalLoading}
+                    disabled={!selectedId || !!externalLoading}
+                    copyingState={copyingState}
+                    onClose={onClose}
+                    onConfirm={handleConfirm}
+                />
             </div>
 
-            {/* 图片放大预览弹窗 */}
             {
                 previewImage && (
                     <ImagePreviewModal

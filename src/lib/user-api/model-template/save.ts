@@ -1,6 +1,14 @@
 import { prisma } from '@/lib/prisma'
 import { composeModelKey } from '@/lib/model-config-contract'
 import { getProviderKey } from '@/lib/api-config'
+import {
+  parseStoredPayloadArrayOrNull,
+  parseStoredPayloadArrayOrThrow,
+} from '@/lib/user-api/api-config/stored-payload'
+import {
+  readUserApiConfigExistingPreference,
+  upsertUserApiConfigPreference,
+} from '@/lib/user-api/api-config/persistence'
 import type { OpenAICompatMediaTemplate } from '@/lib/openai-compat-media-template'
 
 type StoredModelType = 'llm' | 'image' | 'video' | 'audio' | 'lipsync'
@@ -36,17 +44,10 @@ function isStoredModelType(value: string): value is StoredModelType {
 }
 
 function parseStoredModels(raw: string | null | undefined): StoredModelRecord[] {
-  if (!raw) return []
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw) as unknown
-  } catch {
-    throw new Error('MODEL_TEMPLATE_SAVE_CONFLICT: customModels payload is invalid JSON')
-  }
-  if (!Array.isArray(parsed)) {
-    throw new Error('MODEL_TEMPLATE_SAVE_CONFLICT: customModels payload is invalid')
-  }
+  const parsed = parseStoredPayloadArrayOrThrow(
+    raw,
+    () => new Error('MODEL_TEMPLATE_SAVE_CONFLICT: customModels payload is invalid'),
+  )
 
   const result: StoredModelRecord[] = []
   for (let index = 0; index < parsed.length; index += 1) {
@@ -73,14 +74,8 @@ function parseStoredModels(raw: string | null | undefined): StoredModelRecord[] 
 }
 
 function hasProvider(rawProviders: string | null | undefined, providerId: string): boolean {
-  if (!rawProviders) return false
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(rawProviders) as unknown
-  } catch {
-    return false
-  }
-  if (!Array.isArray(parsed)) return false
+  const parsed = parseStoredPayloadArrayOrNull(rawProviders)
+  if (!parsed) return false
   return parsed.some((item) => isRecord(item) && readTrimmedString(item.id) === providerId)
 }
 
@@ -100,13 +95,7 @@ export async function saveModelTemplateConfiguration(input: SaveModelTemplateInp
     throw new Error('MODEL_TEMPLATE_SAVE_INVALID_MODEL')
   }
 
-  const pref = await prisma.userPreference.findUnique({
-    where: { userId: input.userId },
-    select: {
-      customModels: true,
-      customProviders: true,
-    },
-  })
+  const pref = await readUserApiConfigExistingPreference(input.userId)
 
   if (!hasProvider(pref?.customProviders, input.providerId)) {
     throw new Error('MODEL_TEMPLATE_SAVE_PROVIDER_NOT_FOUND')
@@ -150,16 +139,9 @@ export async function saveModelTemplateConfiguration(input: SaveModelTemplateInp
     ? models.map((model, index) => (index === existingIndex ? nextRecord : model))
     : [...models, nextRecord]
 
-  await prisma.userPreference.upsert({
-    where: { userId: input.userId },
-    create: {
-      userId: input.userId,
-      customModels: JSON.stringify(nextModels),
-      customProviders: pref?.customProviders || JSON.stringify([]),
-    },
-    update: {
-      customModels: JSON.stringify(nextModels),
-    },
+  await upsertUserApiConfigPreference(input.userId, {
+    customModels: JSON.stringify(nextModels),
+    ...(pref?.customProviders === undefined ? { customProviders: JSON.stringify([]) } : {}),
   })
 
   return { modelKey }

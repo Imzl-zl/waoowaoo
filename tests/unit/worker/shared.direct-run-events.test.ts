@@ -3,9 +3,23 @@ import type { Job } from 'bullmq'
 import type { TaskJobData } from '@/lib/task/types'
 
 const tryUpdateTaskProgressMock = vi.hoisted(() => vi.fn(async () => true))
+const rollbackTaskBillingForTaskMock = vi.hoisted(() => vi.fn(async () => ({ attempted: false, rolledBack: false, billingInfo: null })))
+const touchTaskHeartbeatMock = vi.hoisted(() => vi.fn(async () => undefined))
+const tryMarkTaskCompletedMock = vi.hoisted(() => vi.fn(async () => true))
+const tryMarkTaskFailedMock = vi.hoisted(() => vi.fn(async () => true))
+const tryMarkTaskProcessingMock = vi.hoisted(() => vi.fn(async () => true))
+const updateTaskBillingInfoMock = vi.hoisted(() => vi.fn(async () => undefined))
 const publishTaskEventMock = vi.hoisted(() => vi.fn(async () => ({})))
 const publishTaskStreamEventMock = vi.hoisted(() => vi.fn(async () => ({})))
 const publishRunEventMock = vi.hoisted(() => vi.fn(async () => undefined))
+const normalizeAnyErrorMock = vi.hoisted(() =>
+  vi.fn((error: Error) => ({
+    code: 'ERROR',
+    message: error.message,
+    retryable: false,
+    provider: null,
+  })),
+)
 const mapTaskSSEEventToRunEventsMock = vi.hoisted(() =>
   vi.fn(() => [{
     runId: 'run-1',
@@ -36,13 +50,13 @@ vi.mock('@/lib/logging/core', () => ({
 }))
 
 vi.mock('@/lib/task/service', () => ({
-  rollbackTaskBillingForTask: vi.fn(async () => ({ attempted: false, rolledBack: false, billingInfo: null })),
-  touchTaskHeartbeat: vi.fn(async () => undefined),
-  tryMarkTaskCompleted: vi.fn(async () => true),
-  tryMarkTaskFailed: vi.fn(async () => true),
-  tryMarkTaskProcessing: vi.fn(async () => true),
+  rollbackTaskBillingForTask: rollbackTaskBillingForTaskMock,
+  touchTaskHeartbeat: touchTaskHeartbeatMock,
+  tryMarkTaskCompleted: tryMarkTaskCompletedMock,
+  tryMarkTaskFailed: tryMarkTaskFailedMock,
+  tryMarkTaskProcessing: tryMarkTaskProcessingMock,
   tryUpdateTaskProgress: tryUpdateTaskProgressMock,
-  updateTaskBillingInfo: vi.fn(async () => undefined),
+  updateTaskBillingInfo: updateTaskBillingInfoMock,
 }))
 
 vi.mock('@/lib/task/publisher', () => ({
@@ -56,12 +70,7 @@ vi.mock('@/lib/task/progress-message', () => ({
 }))
 
 vi.mock('@/lib/errors/normalize', () => ({
-  normalizeAnyError: vi.fn((error: Error) => ({
-    code: 'ERROR',
-    message: error.message,
-    retryable: false,
-    provider: null,
-  })),
+  normalizeAnyError: normalizeAnyErrorMock,
 }))
 
 vi.mock('@/lib/billing', () => ({
@@ -112,11 +121,29 @@ function buildJob(taskType: TaskJobData['type']): Job<TaskJobData> {
 
 describe('worker shared direct run events', () => {
   beforeEach(() => {
+    rollbackTaskBillingForTaskMock.mockReset()
+    rollbackTaskBillingForTaskMock.mockResolvedValue({ attempted: false, rolledBack: false, billingInfo: null })
+    touchTaskHeartbeatMock.mockReset()
+    touchTaskHeartbeatMock.mockResolvedValue(undefined)
+    tryMarkTaskCompletedMock.mockReset()
+    tryMarkTaskCompletedMock.mockResolvedValue(true)
+    tryMarkTaskFailedMock.mockReset()
+    tryMarkTaskFailedMock.mockResolvedValue(true)
+    tryMarkTaskProcessingMock.mockReset()
+    tryMarkTaskProcessingMock.mockResolvedValue(true)
     tryUpdateTaskProgressMock.mockReset()
     tryUpdateTaskProgressMock.mockResolvedValue(true)
+    updateTaskBillingInfoMock.mockReset()
     publishTaskEventMock.mockReset()
     publishTaskStreamEventMock.mockReset()
     publishRunEventMock.mockReset()
+    normalizeAnyErrorMock.mockReset()
+    normalizeAnyErrorMock.mockImplementation((error: Error) => ({
+      code: 'ERROR',
+      message: error.message,
+      retryable: false,
+      provider: null,
+    }))
     mapTaskSSEEventToRunEventsMock.mockClear()
   })
 
@@ -170,6 +197,52 @@ describe('worker shared direct run events', () => {
     expect(publishRunEventMock).toHaveBeenCalledWith(expect.objectContaining({
       runId: 'run-1',
       eventType: 'run.start',
+    }))
+  })
+
+  it('publishes retry progress and rethrows original error for retryable failures', async () => {
+    normalizeAnyErrorMock.mockImplementation((error: Error) => ({
+      code: 'NETWORK_ERROR',
+      message: error.message,
+      retryable: true,
+      provider: null,
+    }))
+    const job = buildJob('story_to_script_run')
+    ;(job as unknown as { attemptsMade: number; opts: { attempts: number; backoff: { type: string; delay: number } } }).attemptsMade = 0
+    ;(job as unknown as { attemptsMade: number; opts: { attempts: number; backoff: { type: string; delay: number } } }).opts = {
+      attempts: 3,
+      backoff: { type: 'fixed', delay: 1000 },
+    }
+
+    await expect(
+      withTaskLifecycle(job, async () => {
+        throw new Error('retry me')
+      }),
+    ).rejects.toThrow('retry me')
+
+    expect(publishTaskEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'task.progress',
+      persist: false,
+      payload: expect.objectContaining({
+        stage: 'retrying',
+      }),
+    }))
+  })
+
+  it('publishes failed lifecycle when the worker hits a non-retryable error', async () => {
+    const job = buildJob('story_to_script_run')
+    await expect(
+      withTaskLifecycle(job, async () => {
+        throw new Error('fatal')
+      }),
+    ).rejects.toThrow('fatal')
+
+    expect(tryMarkTaskFailedMock).toHaveBeenCalledWith('task-1', 'ERROR', 'fatal')
+    expect(publishTaskEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'task.failed',
+      payload: expect.objectContaining({
+        message: 'fatal',
+      }),
     }))
   })
 })

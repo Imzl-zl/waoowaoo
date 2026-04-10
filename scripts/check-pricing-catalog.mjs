@@ -6,6 +6,10 @@ const CAPABILITY_CATALOG_FILE = path.resolve(process.cwd(), 'standards/capabilit
 const API_TYPES = new Set(['text', 'image', 'video', 'voice', 'voice-design', 'lip-sync'])
 const PRICING_MODES = new Set(['flat', 'capability'])
 const TEXT_TOKEN_TYPES = new Set(['input', 'output'])
+const INTERNAL_MEDIA_TIER_FIELDS = {
+  image: new Set(),
+  video: new Set(['containsVideoInput']),
+}
 
 function isRecord(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -162,9 +166,10 @@ function validateMediaCapabilityTierFields(issues, file, index, item, tiers, cap
   const modelId = item.modelId
   const modelKey = buildModelKey(modelType, provider, modelId)
   const fallbackKey = buildModelKey(modelType, getProviderKey(provider), modelId)
-  const optionFields = capabilityOptionFieldsMap.get(modelKey) || capabilityOptionFieldsMap.get(fallbackKey)
+  const optionFields = capabilityOptionFieldsMap.get(modelKey) || capabilityOptionFieldsMap.get(fallbackKey) || new Set()
+  const internalFields = INTERNAL_MEDIA_TIER_FIELDS[modelType] || new Set()
 
-  if (!optionFields || optionFields.size === 0) {
+  if (optionFields.size === 0 && internalFields.size === 0) {
     pushIssue(issues, file, index, 'pricing.tiers', `no capability option fields found for ${modelType} ${provider}/${modelId}`)
     return
   }
@@ -173,6 +178,7 @@ function validateMediaCapabilityTierFields(issues, file, index, item, tiers, cap
     const tier = tiers[tierIndex]
     if (!isRecord(tier) || !isRecord(tier.when)) continue
     for (const field of Object.keys(tier.when)) {
+      if (internalFields.has(field)) continue
       if (!optionFields.has(field)) {
         pushIssue(
           issues,

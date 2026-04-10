@@ -13,8 +13,16 @@ import {
     requestTaskResponseWithError,
 } from './mutation-shared'
 
+function invalidateProjectAssets(
+    queryClient: ReturnType<typeof useQueryClient>,
+    projectId: string,
+) {
+    invalidateQueryTemplates(queryClient, [queryKeys.projectAssets.all(projectId)])
+}
+
 export function useRegenerateProjectPanelImage(projectId: string) {
     const queryClient = useQueryClient()
+    const invalidateAssets = () => invalidateProjectAssets(queryClient, projectId)
     return useMutation({
         mutationFn: async ({ panelId, count }: { panelId: string; count?: number }) => {
             const res = await apiFetch(`/api/novel-promotion/${projectId}/regenerate-panel-image`, {
@@ -51,18 +59,13 @@ export function useRegenerateProjectPanelImage(projectId: string) {
                 targetId: panelId,
             })
         },
-        onSettled: () => {
-            invalidateQueryTemplates(queryClient, [queryKeys.projectAssets.all(projectId)])
-        },
+        onSettled: invalidateAssets,
     })
 }
 
-/**
- * 修改镜头图片（storyboard）
- */
-
 export function useModifyProjectStoryboardImage(projectId: string) {
     const queryClient = useQueryClient()
+    const invalidateAssets = () => invalidateProjectAssets(queryClient, projectId)
     return useMutation({
         mutationFn: async (payload: {
             storyboardId: string
@@ -84,15 +87,9 @@ export function useModifyProjectStoryboardImage(projectId: string) {
                 body: JSON.stringify(payload),
             }, '修改失败')
         },
-        onSettled: () => {
-            invalidateQueryTemplates(queryClient, [queryKeys.projectAssets.all(projectId)])
-        },
+        onSettled: invalidateAssets,
     })
 }
-
-/**
- * 下载剧集全部图片（zip）
- */
 
 export function useDownloadProjectImages(projectId: string) {
     return useMutation({
@@ -107,12 +104,9 @@ export function useDownloadProjectImages(projectId: string) {
     })
 }
 
-/**
- * 更新分镜 panel
- */
-
 export function useUpdateProjectPanel(projectId: string) {
     const queryClient = useQueryClient()
+    const invalidateAssets = () => invalidateProjectAssets(queryClient, projectId)
 
     return useMutation({
         mutationFn: async (payload: Record<string, unknown>) =>
@@ -125,18 +119,13 @@ export function useUpdateProjectPanel(projectId: string) {
                 },
                 '保存失败',
             ),
-        onSettled: () => {
-            invalidateQueryTemplates(queryClient, [queryKeys.projectAssets.all(projectId)])
-        },
+        onSettled: invalidateAssets,
     })
 }
 
-/**
- * 选择/取消镜头候选图（项目）
- */
-
 export function useCreateProjectPanel(projectId: string) {
     const queryClient = useQueryClient()
+    const invalidateAssets = () => invalidateProjectAssets(queryClient, projectId)
     return useMutation({
         mutationFn: async (payload: Record<string, unknown>) => {
             return await requestJsonWithError(`/api/novel-promotion/${projectId}/panel`, {
@@ -145,36 +134,26 @@ export function useCreateProjectPanel(projectId: string) {
                 body: JSON.stringify(payload),
             }, '添加失败')
         },
-        onSettled: () => {
-            invalidateQueryTemplates(queryClient, [queryKeys.projectAssets.all(projectId)])
-        },
+        onSettled: invalidateAssets,
     })
 }
 
-/**
- * 删除 panel
- */
-
 export function useDeleteProjectPanel(projectId: string) {
     const queryClient = useQueryClient()
+    const invalidateAssets = () => invalidateProjectAssets(queryClient, projectId)
     return useMutation({
         mutationFn: async ({ panelId }: { panelId: string }) => {
             return await requestJsonWithError(`/api/novel-promotion/${projectId}/panel?panelId=${panelId}`, {
                 method: 'DELETE',
             }, '删除失败')
         },
-        onSettled: () => {
-            invalidateQueryTemplates(queryClient, [queryKeys.projectAssets.all(projectId)])
-        },
+        onSettled: invalidateAssets,
     })
 }
 
-/**
- * 删除 storyboard group
- */
-
 export function useDeleteProjectStoryboardGroup(projectId: string) {
     const queryClient = useQueryClient()
+    const invalidateAssets = () => invalidateProjectAssets(queryClient, projectId)
     return useMutation({
         mutationFn: async ({ storyboardId }: { storyboardId: string }) => {
             return await requestJsonWithError(
@@ -183,15 +162,9 @@ export function useDeleteProjectStoryboardGroup(projectId: string) {
                 '删除失败',
             )
         },
-        onSettled: () => {
-            invalidateQueryTemplates(queryClient, [queryKeys.projectAssets.all(projectId)])
-        },
+        onSettled: invalidateAssets,
     })
 }
-
-/**
- * 异步重生成文字分镜
- */
 
 export function useRegenerateProjectStoryboardText(projectId: string) {
     return useMutation({
@@ -210,12 +183,9 @@ export function useRegenerateProjectStoryboardText(projectId: string) {
     })
 }
 
-/**
- * 新增 storyboard group
- */
-
 export function useCreateProjectStoryboardGroup(projectId: string) {
     const queryClient = useQueryClient()
+    const invalidateAssets = () => invalidateProjectAssets(queryClient, projectId)
     return useMutation({
         mutationFn: async (payload: { episodeId: string; insertIndex: number }) => {
             return await requestJsonWithError(`/api/novel-promotion/${projectId}/storyboard-group`, {
@@ -224,18 +194,13 @@ export function useCreateProjectStoryboardGroup(projectId: string) {
                 body: JSON.stringify(payload),
             }, '添加失败')
         },
-        onSettled: () => {
-            invalidateQueryTemplates(queryClient, [queryKeys.projectAssets.all(projectId)])
-        },
+        onSettled: invalidateAssets,
     })
 }
 
-/**
- * 移动 storyboard group
- */
-
 export function useMoveProjectStoryboardGroup(projectId: string) {
     const queryClient = useQueryClient()
+    const invalidateAssets = () => invalidateProjectAssets(queryClient, projectId)
     return useMutation({
         mutationFn: async (payload: { episodeId: string; clipId: string; direction: 'up' | 'down' }) => {
             return await requestJsonWithError(`/api/novel-promotion/${projectId}/storyboard-group`, {
@@ -244,18 +209,13 @@ export function useMoveProjectStoryboardGroup(projectId: string) {
                 body: JSON.stringify(payload),
             }, '移动失败')
         },
-        onSettled: () => {
-            invalidateQueryTemplates(queryClient, [queryKeys.projectAssets.all(projectId)])
-        },
+        onSettled: invalidateAssets,
     })
 }
 
-/**
- * 插入 panel（异步）
- */
-
 export function useInsertProjectPanel(projectId: string) {
     const queryClient = useQueryClient()
+    const invalidateAssets = () => invalidateProjectAssets(queryClient, projectId)
     return useMutation({
         mutationFn: async (payload: { storyboardId: string; insertAfterPanelId: string; userInput: string }) => {
             return await requestJsonWithError(`/api/novel-promotion/${projectId}/insert-panel`, {
@@ -264,18 +224,13 @@ export function useInsertProjectPanel(projectId: string) {
                 body: JSON.stringify(payload),
             }, '插入分镜失败')
         },
-        onSettled: () => {
-            invalidateQueryTemplates(queryClient, [queryKeys.projectAssets.all(projectId)])
-        },
+        onSettled: invalidateAssets,
     })
 }
 
-/**
- * 生成镜头变体（异步）
- */
-
 export function useCreateProjectPanelVariant(projectId: string) {
     const queryClient = useQueryClient()
+    const invalidateAssets = () => invalidateProjectAssets(queryClient, projectId)
     return useMutation({
         mutationFn: async (payload: {
             storyboardId: string
@@ -297,17 +252,13 @@ export function useCreateProjectPanelVariant(projectId: string) {
                 body: JSON.stringify(payload),
             }, '生成变体失败')
         },
-        onSettled: () => {
-            invalidateQueryTemplates(queryClient, [queryKeys.projectAssets.all(projectId)])
-        },
+        onSettled: invalidateAssets,
     })
 }
 
-/**
- * 清除 storyboard 错误
- */
 export function useClearProjectStoryboardError(projectId: string) {
     const queryClient = useQueryClient()
+    const invalidateAssets = () => invalidateProjectAssets(queryClient, projectId)
     return useMutation({
         mutationFn: async ({ storyboardId }: { storyboardId: string }) =>
             await requestJsonWithError(
@@ -319,8 +270,6 @@ export function useClearProjectStoryboardError(projectId: string) {
                 },
                 '清除分镜错误失败',
             ),
-        onSettled: () => {
-            invalidateQueryTemplates(queryClient, [queryKeys.projectAssets.all(projectId)])
-        },
+        onSettled: invalidateAssets,
     })
 }

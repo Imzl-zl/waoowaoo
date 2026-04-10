@@ -11,6 +11,7 @@ import { hasVoiceLineAudioOutput } from '@/lib/task/has-output'
 import { withTaskUiPayload } from '@/lib/task/ui-payload'
 import { parseModelKeyStrict } from '@/lib/model-config-contract'
 import { getProviderKey, resolveModelSelectionOrSingle } from '@/lib/api-config'
+import { readUserPreferenceAudioModel } from '@/lib/user-preference/persistence'
 import {
   hasVoiceBindingForProvider,
   parseSpeakerVoiceMap,
@@ -120,10 +121,7 @@ export const POST = apiHandler(async (
       field: 'audioModel'})
   }
 
-  const pref = await prisma.userPreference.findUnique({
-    where: { userId: session.user.id },
-    select: { audioModel: true },
-  })
+  const pref = await readUserPreferenceAudioModel(session.user.id)
   const preferredAudioModel = typeof pref?.audioModel === 'string' ? pref.audioModel.trim() : ''
   if (preferredAudioModel && !parseModelKeyStrict(preferredAudioModel)) {
     throw new ApiError('INVALID_PARAMS', {

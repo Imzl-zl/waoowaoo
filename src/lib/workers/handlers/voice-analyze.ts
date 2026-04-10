@@ -9,8 +9,11 @@ import { createWorkerLLMStreamCallbacks, createWorkerLLMStreamContext } from './
 import type { TaskJobData } from '@/lib/task/types'
 import {
   buildStoryboardJson,
+  buildStoryboardPanelIdMap,
   parseVoiceLinesJson,
-  type VoiceLinePayload,
+  summarizeVoiceLinesBySpeaker,
+  toStrictVoiceLines,
+  type StrictVoiceLine,
 } from './voice-analyze-helpers'
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompt-i18n'
 import { resolveAnalysisModel } from './resolve-analysis-model'
@@ -109,25 +112,11 @@ export async function handleVoiceAnalyzeTask(job: Job<TaskJobData>) {
 
   const streamContext = createWorkerLLMStreamContext(job, 'voice_analyze')
   const streamCallbacks = createWorkerLLMStreamCallbacks(job, streamContext)
-  const panelIdByStoryboardPanel = new Map<string, string>()
-  for (const storyboard of episode.storyboards || []) {
-    for (const panel of storyboard.panels || []) {
-      panelIdByStoryboardPanel.set(`${storyboard.id}:${panel.panelIndex}`, panel.id)
-    }
-  }
+  const panelIdByStoryboardPanel = buildStoryboardPanelIdMap(episode.storyboards || [])
   if (panelIdByStoryboardPanel.size === 0) {
     throw new Error('No storyboard panels found for voice matching')
   }
 
-  type StrictVoiceLine = {
-    lineIndex: number
-    speaker: string
-    content: string
-    emotionStrength: number
-    matchedPanelId: string | null
-    matchedStoryboardId: string | null
-    matchedPanelIndex: number | null
-  }
   let voiceLinesData: StrictVoiceLine[] | null = null
   let lastAnalyzeError: Error | null = null
 
@@ -159,63 +148,7 @@ export async function handleVoiceAnalyzeTask(job: Job<TaskJobData>) {
         }
 
         const parsedLines = parseVoiceLinesJson(responseText)
-        const strictLines: StrictVoiceLine[] = parsedLines.map((lineData: VoiceLinePayload, index: number) => {
-          if (typeof lineData.lineIndex !== 'number' || !Number.isFinite(lineData.lineIndex)) {
-            throw new Error(`voice line ${index + 1} is missing valid lineIndex`)
-          }
-          const lineIndex = Math.floor(lineData.lineIndex)
-          if (lineIndex <= 0) {
-            throw new Error(`voice line ${index + 1} has invalid lineIndex`)
-          }
-          if (typeof lineData.speaker !== 'string' || !lineData.speaker.trim()) {
-            throw new Error(`voice line ${index + 1} is missing valid speaker`)
-          }
-          if (typeof lineData.content !== 'string' || !lineData.content.trim()) {
-            throw new Error(`voice line ${index + 1} is missing valid content`)
-          }
-          if (typeof lineData.emotionStrength !== 'number' || !Number.isFinite(lineData.emotionStrength)) {
-            throw new Error(`voice line ${index + 1} is missing valid emotionStrength`)
-          }
-
-          const matchedPanel = lineData.matchedPanel
-          if (!matchedPanel) {
-            return {
-              lineIndex,
-              speaker: lineData.speaker.trim(),
-              content: lineData.content,
-              emotionStrength: Math.min(1, Math.max(0.1, lineData.emotionStrength)),
-              matchedPanelId: null,
-              matchedStoryboardId: null,
-              matchedPanelIndex: null,
-            }
-          }
-
-          const storyboardId = typeof matchedPanel.storyboardId === 'string' ? matchedPanel.storyboardId.trim() : ''
-          const panelIndex = typeof matchedPanel.panelIndex === 'number' && Number.isFinite(matchedPanel.panelIndex)
-            ? Math.floor(matchedPanel.panelIndex)
-            : null
-          if (!storyboardId || panelIndex === null || panelIndex < 0) {
-            throw new Error(`voice line ${index + 1} has invalid matchedPanel`)
-          }
-
-          const panelKey = `${storyboardId}:${panelIndex}`
-          const panelId = panelIdByStoryboardPanel.get(panelKey)
-          if (!panelId) {
-            throw new Error(`voice line ${index + 1} references non-existent panel ${panelKey}`)
-          }
-
-          return {
-            lineIndex,
-            speaker: lineData.speaker.trim(),
-            content: lineData.content,
-            emotionStrength: Math.min(1, Math.max(0.1, lineData.emotionStrength)),
-            matchedPanelId: panelId,
-            matchedStoryboardId: storyboardId,
-            matchedPanelIndex: panelIndex,
-          }
-        })
-
-        voiceLinesData = strictLines
+        voiceLinesData = toStrictVoiceLines(parsedLines, panelIdByStoryboardPanel)
         break
       } catch (error) {
         lastAnalyzeError = error instanceof Error ? error : new Error(String(error))
@@ -324,11 +257,7 @@ export async function handleVoiceAnalyzeTask(job: Job<TaskJobData>) {
     return created
   })
 
-  const speakerStats: Record<string, number> = {}
-  for (const line of createdVoiceLines) {
-    speakerStats[line.speaker] = (speakerStats[line.speaker] || 0) + 1
-  }
-  const matchedCount = createdVoiceLines.filter((line) => line.matchedStoryboardId).length
+  const { speakerStats, matchedCount } = summarizeVoiceLinesBySpeaker(createdVoiceLines)
 
   await reportTaskProgress(job, 96, {
     stage: 'voice_analyze_persist_done',

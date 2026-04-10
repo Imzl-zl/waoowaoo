@@ -4,6 +4,7 @@ import { logError as _ulogError } from '@/lib/logging/core'
 import { getLogContext } from '@/lib/logging/context'
 import { prisma } from '@/lib/prisma'
 import { parseModelKeyStrict } from '@/lib/model-config-contract'
+import { readUserPreferenceCustomModels } from '@/lib/user-preference/persistence'
 import {
   calcImage,
   calcLipSync,
@@ -540,10 +541,7 @@ async function loadUserCustomPricing(
   const parsed = parseModelKeyStrict(model)
   if (!parsed) return null
 
-  const pref = await prisma.userPreference.findUnique({
-    where: { userId },
-    select: { customModels: true },
-  })
+  const pref = await readUserPreferenceCustomModels(userId)
   if (!pref?.customModels) return null
 
   let models: Array<{ modelKey: string; customPricing?: unknown }>

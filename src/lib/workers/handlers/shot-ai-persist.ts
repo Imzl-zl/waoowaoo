@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { composeModelKey, parseModelKeyStrict } from '@/lib/model-config-contract'
 import { type LocationAvailableSlot, stringifyLocationAvailableSlots } from '@/lib/location-available-slots'
+import { readUserPreferenceAnalysisModel } from '@/lib/user-preference/persistence'
 
 function normalizeModelKey(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -20,10 +21,7 @@ export async function resolveAnalysisModel(projectId: string, userId: string): P
       where: { projectId },
       select: { id: true, analysisModel: true },
     }),
-    prisma.userPreference.findUnique({
-      where: { userId },
-      select: { analysisModel: true },
-    }),
+    readUserPreferenceAnalysisModel(userId),
   ])
   if (!novelData) throw new Error('Novel promotion project not found')
 

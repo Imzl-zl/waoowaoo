@@ -13,6 +13,10 @@ import {
   composeModelKey as composeStrictModelKey,
   parseModelKeyStrict,
 } from '@/lib/model-config-contract'
+import {
+  readUserPreferenceModelConfig,
+  readUserPreferenceWorkflowConcurrency,
+} from '@/lib/user-preference/persistence'
 import { findBuiltinCapabilities } from '@/lib/model-capabilities/catalog'
 import { resolveGenerationOptionsForModel } from '@/lib/model-capabilities/lookup'
 import {
@@ -125,14 +129,7 @@ export interface UserModelConfig {
 export async function getUserWorkflowConcurrencyConfig(
   userId: string,
 ): Promise<WorkflowConcurrencyConfig> {
-  const userPref = await prisma.userPreference.findUnique({
-    where: { userId },
-    select: {
-      analysisConcurrency: true,
-      imageConcurrency: true,
-      videoConcurrency: true,
-    },
-  })
+  const userPref = await readUserPreferenceWorkflowConcurrency(userId)
 
   return normalizeWorkflowConcurrencyConfig({
     analysis: userPref?.analysisConcurrency,
@@ -150,7 +147,7 @@ export async function getProjectModelConfig(
 ): Promise<ProjectModelConfig> {
   const [projectData, userPref] = await Promise.all([
     prisma.novelPromotionProject.findUnique({ where: { projectId } }),
-    prisma.userPreference.findUnique({ where: { userId } }),
+    readUserPreferenceModelConfig(userId),
   ])
 
   return {
@@ -172,9 +169,7 @@ export async function getProjectModelConfig(
  * 获取用户级模型配置（无项目时使用）
  */
 export async function getUserModelConfig(userId: string): Promise<UserModelConfig> {
-  const userPref = await prisma.userPreference.findUnique({
-    where: { userId },
-  })
+  const userPref = await readUserPreferenceModelConfig(userId)
 
   return {
     analysisModel: extractModelKey(userPref?.analysisModel) || null,

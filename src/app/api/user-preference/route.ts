@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
 import { requireUserAuth, isErrorResponse } from '@/lib/api-auth'
 import { ApiError, apiHandler } from '@/lib/api-errors'
 import { isArtStyleValue } from '@/lib/constants'
+import {
+  ensureUserPreference,
+  upsertUserPreferenceFields,
+} from '@/lib/user-preference/persistence'
 
 function validateArtStyleField(value: unknown): string {
   if (typeof value !== 'string') {
@@ -31,11 +34,7 @@ export const GET = apiHandler(async () => {
   const { session } = authResult
 
   // 获取或创建用户偏好
-  const preference = await prisma.userPreference.upsert({
-    where: { userId: session.user.id },
-    update: {},
-    create: { userId: session.user.id }
-  })
+  const preference = await ensureUserPreference(session.user.id)
 
   return NextResponse.json({ preference })
 })
@@ -80,14 +79,7 @@ export const PATCH = apiHandler(async (request: NextRequest) => {
   }
 
   // 更新或创建用户偏好
-  const preference = await prisma.userPreference.upsert({
-    where: { userId: session.user.id },
-    update: updateData,
-    create: {
-      userId: session.user.id,
-      ...updateData
-    }
-  })
+  const preference = await upsertUserPreferenceFields(session.user.id, updateData)
 
   return NextResponse.json({ preference })
 })

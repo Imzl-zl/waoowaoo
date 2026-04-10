@@ -25,7 +25,6 @@ import {
   AnyObj,
   parseImageUrls,
   pickFirstString,
-  resolveNovelData,
 } from './image-task-handler-shared'
 import { createScopedLogger } from '@/lib/logging/core'
 import {
@@ -33,6 +32,7 @@ import {
   generateModifiedAssetDescription,
   readIndexedDescription,
 } from './modify-description-sync'
+import { handleStoryboardAssetImageModification } from './image-task-handlers-storyboard-modify'
 
 const logger = createScopedLogger({ module: 'worker.modify-asset-image' })
 
@@ -270,100 +270,13 @@ export async function handleModifyAssetImageTask(job: Job<TaskJobData>) {
   }
 
   if (type === 'storyboard') {
-    const panelId = pickFirstString(payload.panelId, payload.targetId, job.data.targetId)
-    let panel = panelId
-      ? await prisma.novelPromotionPanel.findUnique({
-        where: { id: panelId },
-        select: {
-          id: true,
-          storyboardId: true,
-          panelIndex: true,
-          imageUrl: true,
-          previousImageUrl: true,
-        },
-      })
-      : null
-
-    const storyboardId = pickFirstString(payload.storyboardId)
-    if (!panel && storyboardId && payload.panelIndex !== undefined) {
-      panel = await prisma.novelPromotionPanel.findFirst({
-        where: {
-          storyboardId,
-          panelIndex: Number(payload.panelIndex),
-        },
-        select: {
-          id: true,
-          storyboardId: true,
-          panelIndex: true,
-          imageUrl: true,
-          previousImageUrl: true,
-        },
-      })
-    }
-
-    if (!panel || !panel.imageUrl) {
-      throw new Error('Storyboard panel image not found')
-    }
-
-    const currentUrl = toSignedUrlIfCos(panel.imageUrl, 3600)
-    if (!currentUrl) throw new Error('No storyboard panel image url')
-
-    const projectData = await resolveNovelData(job.data.projectId)
-    if (!projectData.videoRatio) throw new Error('Project videoRatio not configured')
-    const aspectRatio = projectData.videoRatio
-    const requiredReference = await normalizeToBase64ForGeneration(currentUrl)
-    const extraReferenceInputs: string[] = []
-
-    const selectedAssets = Array.isArray(payload.selectedAssets)
-      ? payload.selectedAssets
-      : []
-    for (const asset of selectedAssets) {
-      if (!asset || typeof asset !== 'object') continue
-      const assetImage = (asset as AnyObj).imageUrl
-      if (typeof assetImage === 'string' && assetImage.trim()) {
-        extraReferenceInputs.push(assetImage.trim())
-      }
-    }
-
-    if (Array.isArray(payload.extraImageUrls)) {
-      for (const url of payload.extraImageUrls) {
-        if (typeof url === 'string' && url.trim().length > 0) {
-          extraReferenceInputs.push(url.trim())
-        }
-      }
-    }
-
-    const normalizedExtras = await normalizeReferenceImagesForGeneration(extraReferenceInputs)
-    const uniqueReferences = Array.from(new Set([requiredReference, ...normalizedExtras]))
-    const prompt = `请根据以下指令修改分镜图片，保持镜头语言和主体一致：\n${modifyPrompt}`
-    const source = await resolveImageSourceFromGeneration(job, {
-      userId: job.data.userId,
-      modelId: editModel,
-      prompt,
-      options: {
-        referenceImages: uniqueReferences,
-        aspectRatio,
-        ...(resolution ? { resolution } : {}),
-      },
+    return await handleStoryboardAssetImageModification({
+      job,
+      payload,
+      editModel,
+      modifyPrompt: String(modifyPrompt),
+      resolution,
     })
-
-    const cosKey = await uploadImageSourceToCos(source, 'panel-modify', panel.id)
-
-    await assertTaskActive(job, 'persist_storyboard_modify')
-    await prisma.novelPromotionPanel.update({
-      where: { id: panel.id },
-      data: {
-        previousImageUrl: panel.imageUrl || panel.previousImageUrl || null,
-        imageUrl: cosKey,
-        candidateImages: null,
-      },
-    })
-
-    return {
-      type,
-      panelId: panel.id,
-      imageUrl: cosKey,
-    }
   }
 
   throw new Error(`Unsupported modify type: ${String(type)}`)

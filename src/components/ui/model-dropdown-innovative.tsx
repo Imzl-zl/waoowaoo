@@ -1,101 +1,13 @@
 'use client'
 
-import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AppIcon } from '@/components/ui/icons'
-import type { ModelCapabilityOption, CapabilityFieldDefinition } from './config-modals/ModelCapabilityDropdown'
-import type { CapabilityValue } from '@/lib/model-config-contract'
-export interface ModelDropdownTestProps {
-    models: ModelCapabilityOption[]
-    value: string | undefined
-    onModelChange: (modelKey: string) => void
-    capabilityFields: CapabilityFieldDefinition[]
-    capabilityOverrides: Record<string, CapabilityValue>
-    onCapabilityChange: (field: string, rawValue: string, sample: CapabilityValue) => void
-    placeholder?: string
-}
-
-const VIEWPORT_EDGE_GAP = 8
-const DEFAULT_MAX_HEIGHT = 400
-
-function useDropdown(isOpen: boolean, setIsOpen: (val: boolean) => void, alignRight: boolean = false) {
-    const triggerRef = useRef<HTMLButtonElement>(null)
-    const panelRef = useRef<HTMLDivElement>(null)
-    const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({})
-
-    const updatePosition = useCallback(() => {
-        if (!triggerRef.current) return
-        const rect = triggerRef.current.getBoundingClientRect()
-        const viewportHeight = window.innerHeight || document.documentElement.clientHeight
-        const spaceBelow = viewportHeight - rect.bottom - VIEWPORT_EDGE_GAP
-        const spaceAbove = rect.top - VIEWPORT_EDGE_GAP
-
-        let openUpward = false
-        let currentMaxHeight = DEFAULT_MAX_HEIGHT
-
-        if (spaceBelow < 250 && spaceAbove > spaceBelow) {
-            openUpward = true
-            currentMaxHeight = Math.min(DEFAULT_MAX_HEIGHT, spaceAbove)
-        } else {
-            currentMaxHeight = Math.min(DEFAULT_MAX_HEIGHT, spaceBelow)
-        }
-
-        const width = Math.max(rect.width, 240)
-        let left = rect.left
-        if (alignRight) {
-            left = rect.right - width
-        }
-
-        setPanelStyle({
-            position: 'fixed',
-            left,
-            width,
-            maxHeight: currentMaxHeight,
-            ...(openUpward
-                ? { bottom: viewportHeight - rect.top + 6 }
-                : { top: rect.bottom + 6 }),
-            zIndex: 9999
-        })
-    }, [alignRight])
-
-    useEffect(() => {
-        function handleClickOutside(e: MouseEvent) {
-            const target = e.target as Node
-            if (triggerRef.current?.contains(target)) return
-            if (panelRef.current?.contains(target)) return
-            setIsOpen(false)
-        }
-        document.addEventListener('mousedown', handleClickOutside)
-        return () => document.removeEventListener('mousedown', handleClickOutside)
-    }, [setIsOpen])
-
-    useLayoutEffect(() => {
-        if (!isOpen) return
-        updatePosition()
-        window.addEventListener('resize', updatePosition)
-        window.addEventListener('scroll', updatePosition, true)
-        return () => {
-            window.removeEventListener('resize', updatePosition)
-            window.removeEventListener('scroll', updatePosition, true)
-        }
-    }, [isOpen, updatePosition])
-
-    return { triggerRef, panelRef, panelStyle }
-}
-
-function resolveParamSummary(fields: CapabilityFieldDefinition[], overrides: Record<string, CapabilityValue>) {
-    return fields.map(def => {
-        const val = overrides[def.field] !== undefined ? String(overrides[def.field]) : String(def.options[0] || '')
-        if (def.field === 'duration') return `${val}s`
-        return val
-    }).filter(Boolean).join(' · ')
-}
-
-
-// ============================================================================
-// V6: The Split Toolbar (Deconstructed Controls)
-// Breaks the monolithic dropdown into two separate context actions. No massive popover.
-// ============================================================================
+import {
+    type ModelDropdownTestProps,
+    resolveParamSummary,
+    useDropdown,
+} from './model-dropdown-shared'
 export function ModelInnovativeV6(props: ModelDropdownTestProps) {
     const [modelOpen, setModelOpen] = useState(false)
     const [paramOpen, setParamOpen] = useState(false)
@@ -188,10 +100,6 @@ export function ModelInnovativeV6(props: ModelDropdownTestProps) {
     )
 }
 
-// ============================================================================
-// V7: The Inline Canvas Expandable (No Overlays, Document Flow)
-// Pushes content down naturally. Perfect for form wizards.
-// ============================================================================
 export function ModelInnovativeV7(props: ModelDropdownTestProps) {
     const [isExpanded, setIsExpanded] = useState(false)
     const activeModel = props.models.find(m => m.value === props.value)
