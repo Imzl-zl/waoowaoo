@@ -1,0 +1,5 @@
+id,task,status,acceptance_criteria,validation_command,completed_at,retry_count,notes
+1,收集规则文件/文档/工程信号,DONE,"已明确初始化路径、真值源、关键入口和近期活动","test -f README.md && test -f package.json && test -d src && test -d prisma",2026-04-10 21:47,0,已读取 README/package.json/guards/standards/.codex-tasks 和最近 git 历史
+2,生成 canonical AGENTS.md 与协作文件,DONE,"AGENTS.md tools.md memory.md archive 已落盘","test -f AGENTS.md && test -f tools.md && test -f memory.md && test -f memory/archive/2026-04.md",2026-04-10 21:49,0,已生成 canonical AGENTS.md 与协作文件体系；无需备份，因为磁盘上无旧文件
+3,回读并执行质量校验,DONE,"关键 section、行数与 archive 结构符合 init-project 要求","wc -l AGENTS.md tools.md memory.md && grep -n \"## 4. Agent 协作文件规则\" AGENTS.md && grep -n \"## 最近活跃窗口\" memory.md",2026-04-10 21:51,0,AGENTS.md 84 行，tools.md 44 行，memory.md 42 行；关键 section 和 archive 记录均存在
+4,更新 task 追踪并关闭任务,DONE,"TODO.csv 与 PROGRESS.md 进入 DONE 状态","test -f .codex-tasks/20260410-init-project/PROGRESS.md && test -f .codex-tasks/20260410-init-project/TODO.csv",2026-04-10 21:52,0,已写入完成状态、校验结果和最终总结
