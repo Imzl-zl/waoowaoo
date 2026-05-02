@@ -12,6 +12,11 @@
 
 # testing
 /coverage
+/.nyc_output/
+/test-results/
+/playwright-report/
+/blob-report/
+/junit*.xml
 
 # next.js
 /.next/
@@ -19,10 +24,18 @@
 
 # production
 /build
+/dist/
+/storybook-static/
 
 # misc
 .DS_Store
 *.pem
+*.pid
+*.seed
+*.heapsnapshot
+*.har
+*.trace.zip
+*.webm
 
 # debug
 npm-debug.log*
@@ -43,6 +56,8 @@ yarn-error.log*
 .agent/
 .shared/
 .codex/
+# local Codex task state; historical tracked task artifacts remain tracked
+.codex-tasks/
 
 # typescript
 *.tsbuildinfo
@@ -53,18 +68,33 @@ next-env.d.ts
 # logs
 /logs
 *.log
+reports/
+screenshots/
+downloads/
 
 # environment variables
 .env
 .env.local
 .env.test
+.env.development
+.env.production
+.env.staging
+.env.preview
 .env.*.local
+!.env.example
 docker-logs/
 
 # database
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
 prisma/data/
+.temporal/
+temporalite.db*
+temporal-data/
 
 # uploads (user data)
 uploads/
@@ -77,13 +107,21 @@ certificates
 
 # temporary files
 tmp/
+/.tmp/
+/.tmp-*/
+/.tmp_*
+scripts/tmp-*
 
 # internal AI agent config (not for public)
-AGENTS.md
 agent/
 
-# internal docs (not for public)
-docs/
+# local tool caches
+.cache/
+.turbo/
+.parcel-cache/
+.eslintcache
+.npm/
+.pnpm-store/
 
 # GitHub CI workflows (internal)
 # .github/ — 只保留 workflows，忽略其他

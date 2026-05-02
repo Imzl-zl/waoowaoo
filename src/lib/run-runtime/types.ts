@@ -40,6 +40,7 @@ export type RunEventInput = {
   stepKey?: string | null
   attempt?: number | null
   lane?: 'text' | 'reasoning' | null
+  idempotencyKey?: string | null
   payload?: Record<string, unknown> | null
 }
 
@@ -53,6 +54,7 @@ export type RunEvent = {
   stepKey?: string | null
   attempt?: number | null
   lane?: 'text' | 'reasoning' | null
+  idempotencyKey?: string | null
   payload?: Record<string, unknown> | null
   createdAt: string
 }
@@ -67,6 +69,12 @@ export type CreateRunInput = {
   targetType: string
   targetId: string
   input?: Record<string, unknown> | null
+}
+
+export type RunTemporalMetadata = {
+  temporalWorkflowId?: string | null
+  temporalFirstExecutionRunId?: string | null
+  temporalTaskQueue?: string | null
 }
 
 export type RunLeaseState = {

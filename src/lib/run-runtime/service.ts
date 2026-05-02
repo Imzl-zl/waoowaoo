@@ -11,8 +11,10 @@ import {
   type RunEvent,
   type RunEventInput,
   type RunStatus,
+  type RunTemporalMetadata,
   type StateRef,
 } from './types'
+import type { TemporalWorkflowStartResult } from '@/lib/workflow-runtime/temporal/types'
 
 type JsonRecord = Record<string, unknown>
 
@@ -36,6 +38,9 @@ type GraphRunRow = {
   leaseExpiresAt: Date | null
   heartbeatAt: Date | null
   workflowVersion: number
+  temporalWorkflowId: string | null
+  temporalFirstExecutionRunId: string | null
+  temporalTaskQueue: string | null
   queuedAt: Date
   startedAt: Date | null
   finishedAt: Date | null
@@ -82,6 +87,7 @@ type GraphEventRow = {
   stepKey: string | null
   attempt: number | null
   lane: string | null
+  idempotencyKey: string | null
   payload: unknown
   createdAt: Date
 }
@@ -108,6 +114,7 @@ type GraphStepAttemptModel = {
 
 type GraphEventModel = {
   create: (args: unknown) => Promise<GraphEventRow>
+  findUnique: (args: unknown) => Promise<GraphEventRow | null>
   findMany: (args: unknown) => Promise<GraphEventRow[]>
 }
 
@@ -143,7 +150,20 @@ type GraphRuntimeClient = GraphRuntimeTx & {
   $transaction: <T>(fn: (tx: GraphRuntimeTx) => Promise<T>) => Promise<T>
 }
 
-const runtimeClient = prisma as unknown as GraphRuntimeClient
+let runtimeClient = prisma as unknown as GraphRuntimeClient
+
+export async function withGraphRuntimeClientForTest<T>(
+  client: GraphRuntimeClient,
+  action: () => Promise<T>,
+): Promise<T> {
+  const previous = runtimeClient
+  runtimeClient = client
+  try {
+    return await action()
+  } finally {
+    runtimeClient = previous
+  }
+}
 
 function toObject(value: unknown): JsonRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -211,6 +231,7 @@ function mapEventRow(row: GraphEventRow): RunEvent {
     stepKey: row.stepKey,
     attempt: row.attempt,
     lane: normalizeLane(row.lane),
+    idempotencyKey: row.idempotencyKey,
     payload: toObject(row.payload),
     createdAt: row.createdAt.toISOString(),
   }
@@ -237,6 +258,9 @@ function mapRunRow(run: GraphRunRow) {
     leaseExpiresAt: toIso(run.leaseExpiresAt),
     heartbeatAt: toIso(run.heartbeatAt),
     workflowVersion: run.workflowVersion,
+    temporalWorkflowId: run.temporalWorkflowId,
+    temporalFirstExecutionRunId: run.temporalFirstExecutionRunId,
+    temporalTaskQueue: run.temporalTaskQueue,
     queuedAt: run.queuedAt.toISOString(),
     startedAt: toIso(run.startedAt),
     finishedAt: toIso(run.finishedAt),
@@ -309,7 +333,36 @@ type MysqlIndexRow = {
 }
 
 const REQUIRED_GRAPH_ARTIFACT_UNIQUE_COLUMNS = ['runId', 'stepKey', 'artifactType', 'refId'] as const
+const PRISMA_UNIQUE_CONSTRAINT_ERROR_CODE = 'P2002'
+const RUN_EVENT_IDEMPOTENCY_KEY_MAX_LENGTH = 191
 let graphArtifactUniqueIndexCheck: Promise<void> | null = null
+
+function normalizeRunEventIdempotencyKey(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (trimmed.length > RUN_EVENT_IDEMPOTENCY_KEY_MAX_LENGTH) {
+    throw new Error(
+      `run event idempotencyKey exceeds ${RUN_EVENT_IDEMPOTENCY_KEY_MAX_LENGTH} characters`,
+    )
+  }
+  return trimmed
+}
+
+function isPrismaUniqueConstraintError(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    (error as { code?: unknown }).code === PRISMA_UNIQUE_CONSTRAINT_ERROR_CODE
+  )
+}
+
+async function findRunEventByIdempotencyKey(idempotencyKey: string): Promise<RunEvent | null> {
+  const row = await runtimeClient.graphEvent.findUnique({
+    where: { idempotencyKey },
+  })
+  return row ? mapEventRow(row) : null
+}
 
 function toIndexNumber(value: number | string) {
   if (typeof value === 'number') return value
@@ -707,6 +760,46 @@ export async function attachTaskToRun(runId: string, taskId: string) {
   return mapRunRow(row)
 }
 
+function normalizeTemporalMetadataValue(value: string | null | undefined, label: string): string {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  if (!trimmed) {
+    throw new Error(`${label} is required`)
+  }
+  return trimmed
+}
+
+function normalizeTemporalMetadata(metadata: RunTemporalMetadata): Required<RunTemporalMetadata> {
+  return {
+    temporalWorkflowId: normalizeTemporalMetadataValue(
+      metadata.temporalWorkflowId,
+      'temporalWorkflowId',
+    ),
+    temporalFirstExecutionRunId: normalizeTemporalMetadataValue(
+      metadata.temporalFirstExecutionRunId,
+      'temporalFirstExecutionRunId',
+    ),
+    temporalTaskQueue: normalizeTemporalMetadataValue(
+      metadata.temporalTaskQueue,
+      'temporalTaskQueue',
+    ),
+  }
+}
+
+export async function recordTemporalWorkflowStart(
+  startResult: TemporalWorkflowStartResult,
+) {
+  const metadata = normalizeTemporalMetadata({
+    temporalWorkflowId: startResult.workflowId,
+    temporalFirstExecutionRunId: startResult.firstExecutionRunId,
+    temporalTaskQueue: startResult.taskQueue,
+  })
+  const row = await runtimeClient.graphRun.update({
+    where: { id: startResult.runId },
+    data: metadata,
+  })
+  return mapRunRow(row)
+}
+
 export async function getRunById(runId: string) {
   const row = await runtimeClient.graphRun.findUnique({
     where: { id: runId },
@@ -896,7 +989,10 @@ export async function requestRunCancel(params: {
   return row ? mapRunRow(row) : null
 }
 
-export async function appendRunEventWithSeq(input: RunEventInput): Promise<RunEvent> {
+async function appendNewRunEventWithSeq(
+  input: RunEventInput,
+  idempotencyKey: string | null,
+): Promise<RunEvent> {
   return await runtimeClient.$transaction(async (tx) => {
     const run = await tx.graphRun.update({
       where: { id: input.runId },
@@ -919,6 +1015,7 @@ export async function appendRunEventWithSeq(input: RunEventInput): Promise<RunEv
         stepKey: input.stepKey || null,
         attempt: input.attempt || null,
         lane: input.lane || null,
+        idempotencyKey,
         payload: input.payload || null,
       },
     })
@@ -926,6 +1023,25 @@ export async function appendRunEventWithSeq(input: RunEventInput): Promise<RunEv
     await applyRunProjection(tx, input)
     return mapEventRow(created)
   })
+}
+
+export async function appendRunEventWithSeq(input: RunEventInput): Promise<RunEvent> {
+  const idempotencyKey = normalizeRunEventIdempotencyKey(input.idempotencyKey)
+  if (idempotencyKey) {
+    const existing = await findRunEventByIdempotencyKey(idempotencyKey)
+    if (existing) return existing
+  }
+
+  try {
+    return await appendNewRunEventWithSeq(input, idempotencyKey)
+  } catch (error) {
+    if (!idempotencyKey || !isPrismaUniqueConstraintError(error)) {
+      throw error
+    }
+    const existing = await findRunEventByIdempotencyKey(idempotencyKey)
+    if (existing) return existing
+    throw error
+  }
 }
 
 export async function listRunEventsAfterSeq(params: {

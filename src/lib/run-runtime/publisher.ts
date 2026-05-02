@@ -21,10 +21,10 @@ export async function publishRunEvent(input: RunEventInput) {
     stepKey: event.stepKey || null,
     attempt: event.attempt || null,
     lane: event.lane || null,
+    idempotencyKey: event.idempotencyKey || null,
     payload: event.payload || null,
     ts: event.createdAt,
   }
   await redis.publish(getProjectRunChannel(event.projectId), JSON.stringify(message))
   return message
 }
-
