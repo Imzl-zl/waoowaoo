@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiHandler, ApiError } from '@/lib/api-errors'
 import { isErrorResponse, requireUserAuth } from '@/lib/api-auth'
-import { cancelTask } from '@/lib/task/service'
-import { getRunById, requestRunCancel } from '@/lib/run-runtime/service'
-import { publishRunEvent } from '@/lib/run-runtime/publisher'
-import { RUN_EVENT_TYPE, RUN_STATUS } from '@/lib/run-runtime/types'
+import { requestManagedRunCancel } from '@/lib/run-runtime/cancel'
 
 export const POST = apiHandler(async (
   _request: NextRequest,
@@ -15,41 +12,16 @@ export const POST = apiHandler(async (
   const { session } = authResult
   const { runId } = await context.params
 
-  const run = await getRunById(runId)
-  if (!run || run.userId !== session.user.id) {
-    throw new ApiError('NOT_FOUND')
-  }
-
-  const cancelledRun = await requestRunCancel({
+  const result = await requestManagedRunCancel({
     runId,
     userId: session.user.id,
   })
-  if (!cancelledRun) {
+  if (!result) {
     throw new ApiError('NOT_FOUND')
-  }
-
-  if (cancelledRun.taskId) {
-    await cancelTask(cancelledRun.taskId, 'Run cancelled by user')
-  }
-
-  if (
-    cancelledRun.status === RUN_STATUS.CANCELING ||
-    cancelledRun.status === RUN_STATUS.CANCELED
-  ) {
-    await publishRunEvent({
-      runId: cancelledRun.id,
-      projectId: cancelledRun.projectId,
-      userId: cancelledRun.userId,
-      eventType: RUN_EVENT_TYPE.RUN_CANCELED,
-      payload: {
-        message: 'Run cancelled by user',
-      },
-    })
   }
 
   return NextResponse.json({
     success: true,
-    run: cancelledRun,
+    run: result.run,
   })
 })
-

@@ -12,6 +12,7 @@ export const TEMPORAL_SMOKE_STEP = {
 
 export const TEMPORAL_WORKFLOW_TYPE = {
   SMOKE: 'smokeWorkflow',
+  RUN_TASK: 'runTaskWorkflow',
 } as const
 
 export type TemporalWorkflowType =
@@ -38,6 +39,15 @@ export type TemporalWorkflowRunInput = Readonly<{
 export type TemporalWorkflowRunResult = Readonly<{
   runId: string
   workflowType: string
+  status: 'completed'
+  activityId: string
+}>
+
+export type TemporalTaskWorkflowResult = Readonly<{
+  runId: string
+  workflowType: string
+  taskId: string
+  taskType: string
   status: 'completed'
   activityId: string
 }>

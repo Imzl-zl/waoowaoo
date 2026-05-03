@@ -15,10 +15,11 @@ import {
   type TemporalWorkflowRunResult,
   type TemporalWorkflowStepDescriptor,
 } from './types'
+import { taskActivities } from './run-task'
 
 export type TemporalActivities = typeof activities
 
-export const activities = {
+const lifecycleActivities = {
   async recordWorkflowStarted(input: TemporalWorkflowRunInput) {
     const current = activityInfo()
     const event = await publishTemporalRunLifecycleEvent({
@@ -149,4 +150,9 @@ export const activities = {
       workflowType: input.workflowType,
     }
   },
+}
+
+export const activities = {
+  ...lifecycleActivities,
+  ...taskActivities,
 }

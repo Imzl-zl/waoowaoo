@@ -7,9 +7,13 @@ import {
   buildTemporalWorkflowStepFailurePayload,
   buildTemporalWorkflowStepStartedPayload,
 } from '@/lib/workflow-runtime/temporal/contract'
-import { TEMPORAL_SMOKE_STEP } from '@/lib/workflow-runtime/temporal/types'
+import { TEMPORAL_SMOKE_STEP, TEMPORAL_WORKFLOW_TYPE } from '@/lib/workflow-runtime/temporal/types'
 
 describe('buildTemporalWorkflowRunResult', () => {
+  it('exposes the real run task workflow type', () => {
+    expect(TEMPORAL_WORKFLOW_TYPE.RUN_TASK).toBe('runTaskWorkflow')
+  })
+
   it('builds the stable product-facing Temporal smoke result', () => {
     expect(buildTemporalWorkflowRunResult({
       runId: 'run-1',

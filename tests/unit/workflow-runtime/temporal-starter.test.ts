@@ -72,6 +72,26 @@ describe('Temporal workflow starter', () => {
     })
   })
 
+  it('starts the run task workflow type', async () => {
+    const { client, start } = createClient()
+
+    await startTemporalWorkflowRunWithClient({
+      client,
+      config: {
+        address: 'temporal:7233',
+        namespace: 'default',
+        taskQueue: 'waoowaoo-main',
+      },
+      temporalWorkflowType: TEMPORAL_WORKFLOW_TYPE.RUN_TASK,
+      input,
+    })
+
+    expect(start).toHaveBeenCalledWith(TEMPORAL_WORKFLOW_TYPE.RUN_TASK, expect.objectContaining({
+      workflowId: 'waoowaoo-run-run-1',
+      taskQueue: 'waoowaoo-main',
+    }))
+  })
+
   it('exposes invalid workflow start inputs', async () => {
     const { client } = createClient()
 
