@@ -6,11 +6,18 @@ import {
 } from '@/lib/config-service'
 import { onProjectNameAvailable } from '@/lib/logging/file-writer'
 import { TaskTerminatedError } from '@/lib/task/errors'
-import { reportTaskProgress } from '@/lib/workers/shared'
+import {
+  buildTaskExecutionContextFromJob,
+  reportTaskProgressContext,
+  type TaskExecutionContext,
+} from '@/lib/workers/shared'
 import {
   type ScriptToStoryboardOrchestratorResult,
 } from '@/lib/novel-promotion/script-to-storyboard/orchestrator'
-import { createWorkerLLMStreamCallbacks, createWorkerLLMStreamContext } from './llm-stream'
+import {
+  createWorkerLLMStreamCallbacksContext,
+  createWorkerLLMStreamContextForTask,
+} from './llm-stream'
 import type { TaskJobData } from '@/lib/task/types'
 import { parseEffort, parseTemperature } from './script-to-storyboard-helpers'
 import { resolveAnalysisModel } from './resolve-analysis-model'
@@ -33,9 +40,14 @@ import {
 } from './script-to-storyboard-pipeline'
 
 export async function handleScriptToStoryboardTask(job: Job<TaskJobData>) {
-  const payload = (job.data.payload || {}) as AnyObj
-  const projectId = job.data.projectId
-  const episodeIdRaw = typeof payload.episodeId === 'string' ? payload.episodeId : (job.data.episodeId || '')
+  return await handleScriptToStoryboardTaskContext(buildTaskExecutionContextFromJob(job))
+}
+
+export async function handleScriptToStoryboardTaskContext(context: TaskExecutionContext) {
+  const data = context.data
+  const payload = (data.payload || {}) as AnyObj
+  const projectId = data.projectId
+  const episodeIdRaw = typeof payload.episodeId === 'string' ? payload.episodeId : (data.episodeId || '')
   const episodeId = episodeIdRaw.trim()
   const inputModel = typeof payload.model === 'string' ? payload.model.trim() : ''
   const retryStepKey = typeof payload.retryStepKey === 'string' ? payload.retryStepKey.trim() : ''
@@ -102,24 +114,24 @@ export async function handleScriptToStoryboardTask(job: Job<TaskJobData>) {
   const skipVoiceAnalyze = !!retryStepKey && retryStepKey !== 'voice_analyze'
 
   const model = await resolveAnalysisModel({
-    userId: job.data.userId,
+    userId: data.userId,
     inputModel,
     projectAnalysisModel: novelData.analysisModel,
   })
   const [llmCapabilityOptions, workflowConcurrency] = await Promise.all([
     resolveProjectModelCapabilityGenerationOptions({
       projectId,
-      userId: job.data.userId,
+      userId: data.userId,
       modelType: 'llm',
       modelKey: model,
     }),
-    getUserWorkflowConcurrencyConfig(job.data.userId),
+    getUserWorkflowConcurrencyConfig(data.userId),
   ])
   const capabilityReasoningEffort = llmCapabilityOptions.reasoningEffort
   const reasoningEffort = requestedReasoningEffort
     || (isReasoningEffort(capabilityReasoningEffort) ? capabilityReasoningEffort : 'high')
 
-  const promptTemplates = getStoryboardPromptTemplates(job.data.locale || 'zh')
+  const promptTemplates = getStoryboardPromptTemplates(data.locale || 'zh')
   const payloadMeta = typeof payload.meta === 'object' && payload.meta !== null
     ? (payload.meta as AnyObj)
     : {}
@@ -129,7 +141,7 @@ export async function handleScriptToStoryboardTask(job: Job<TaskJobData>) {
   if (!runId) {
     throw new Error('runId is required for script_to_storyboard pipeline')
   }
-  const workerId = buildWorkflowWorkerId(job, 'script_to_storyboard')
+  const workerId = buildWorkflowWorkerId(context, 'script_to_storyboard')
   const assertRunActive = async (stage: string) => {
     await assertWorkflowRunActive({
       runId,
@@ -137,8 +149,8 @@ export async function handleScriptToStoryboardTask(job: Job<TaskJobData>) {
       stage,
     })
   }
-  const streamContext = createWorkerLLMStreamContext(job, 'script_to_storyboard')
-  const callbacks = createWorkerLLMStreamCallbacks(job, streamContext, {
+  const streamContext = createWorkerLLMStreamContextForTask(data.taskId, 'script_to_storyboard')
+  const callbacks = createWorkerLLMStreamCallbacksContext(context, streamContext, {
     assertActive: async (stage) => {
       await assertRunActive(stage)
     },
@@ -155,7 +167,7 @@ export async function handleScriptToStoryboardTask(job: Job<TaskJobData>) {
     },
   })
   const runStep = createScriptToStoryboardRunStep({
-    job,
+    context,
     projectId,
     projectName: project.name,
     model,
@@ -170,10 +182,10 @@ export async function handleScriptToStoryboardTask(job: Job<TaskJobData>) {
 
   const leaseResult = await withWorkflowRunLease({
     runId,
-    userId: job.data.userId,
+    userId: data.userId,
     workerId,
     run: async () => {
-      await reportTaskProgress(job, 10, {
+      await reportTaskProgressContext(context, 10, {
         stage: 'script_to_storyboard_prepare',
         stageLabel: 'progress.stage.scriptToStoryboardPrepare',
         displayMode: 'detail',
@@ -186,7 +198,7 @@ export async function handleScriptToStoryboardTask(job: Job<TaskJobData>) {
         locations: (novelData.locations || []) as Array<Record<string, unknown> & { name: string; summary?: string | null }>,
       })
       const orchestratorResult: ScriptToStoryboardOrchestratorResult = await runStoryboardOrchestratorFlow({
-        job,
+        context,
         callbacks,
         concurrency: workflowConcurrency.analysis,
         runId,
@@ -203,7 +215,7 @@ export async function handleScriptToStoryboardTask(job: Job<TaskJobData>) {
       })
 
       return await persistStoryboardTaskOutputs({
-        job,
+        context,
         callbacks,
         runId,
         retryStepKey,

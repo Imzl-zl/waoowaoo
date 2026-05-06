@@ -17,6 +17,8 @@ import {
   withFlowFields,
 } from './task-flow-events'
 import {
+  type TaskRetryState,
+  buildRetryStateFromJob,
   resolveProjectNameForLogging,
 } from './task-lifecycle-helpers'
 import {
@@ -37,10 +39,27 @@ function buildWorkerLogger(data: TaskJobData, queueName: string) {
   })
 }
 
-export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Job<TaskJobData>) => Promise<Record<string, unknown> | void>) {
-  const data = job.data
+export type TaskExecutionContext = Readonly<{
+  data: TaskJobData
+  queueName: string
+  retryState: TaskRetryState
+}>
+
+export function buildTaskExecutionContextFromJob(job: Job<TaskJobData>): TaskExecutionContext {
+  return {
+    data: job.data,
+    queueName: job.queueName,
+    retryState: buildRetryStateFromJob(job),
+  }
+}
+
+export async function withTaskLifecycleContext(
+  context: TaskExecutionContext,
+  handler: (context: TaskExecutionContext) => Promise<Record<string, unknown> | void>,
+) {
+  const data = context.data
   const taskId = data.taskId
-  const logger = buildWorkerLogger(data, job.queueName)
+  const logger = buildWorkerLogger(data, context.queueName)
   const startedAt = Date.now()
   let billingInfo = (data.billingInfo || null) as TaskBillingInfo | null
 
@@ -56,7 +75,7 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
       action: 'worker.start',
       message: 'worker started',
       details: {
-        queue: job.queueName,
+        queue: context.queueName,
         taskType: data.type,
         targetType: data.targetType,
         targetId: data.targetId,
@@ -72,9 +91,13 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
       })
       return
     }
-    await publishProcessingLifecycle({ job })
+    await publishProcessingLifecycle({
+      taskId,
+      data,
+      queueName: context.queueName,
+    })
 
-    const { result, textUsage } = await withTextUsageCollection(async () => await handler(job))
+    const { result, textUsage } = await withTextUsageCollection(async () => await handler(context))
     const completed = await handleSuccessfulTaskCompletion({
       taskId,
       data,
@@ -97,7 +120,8 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
       })
     }
     await handleWorkerFailure({
-      job,
+      retryState: context.retryState,
+      queueName: context.queueName,
       taskId,
       data,
       error,
@@ -110,10 +134,24 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
   }
 }
 
-export async function reportTaskProgress(job: Job<TaskJobData>, progress: number, payload?: Record<string, unknown>) {
+export async function withTaskLifecycle(
+  job: Job<TaskJobData>,
+  handler: (job: Job<TaskJobData>) => Promise<Record<string, unknown> | void>,
+) {
+  await withTaskLifecycleContext(
+    buildTaskExecutionContextFromJob(job),
+    async () => await handler(job),
+  )
+}
+
+export async function reportTaskProgressContext(
+  context: TaskExecutionContext,
+  progress: number,
+  payload?: Record<string, unknown>,
+) {
   const value = Math.max(0, Math.min(99, Math.floor(progress)))
-  const logger = buildWorkerLogger(job.data, job.queueName)
-  const nextPayload: Record<string, unknown> = withFlowFields(job.data, payload)
+  const logger = buildWorkerLogger(context.data, context.queueName)
+  const nextPayload: Record<string, unknown> = withFlowFields(context.data, payload)
   const stage = typeof nextPayload.stage === 'string' ? nextPayload.stage : null
   if (stage && typeof nextPayload.stageLabel !== 'string') {
     nextPayload.stageLabel = getTaskStageLabel(stage)
@@ -124,7 +162,7 @@ export async function reportTaskProgress(job: Job<TaskJobData>, progress: number
   if (typeof nextPayload.message !== 'string') {
     nextPayload.message = buildTaskProgressMessage({
       eventType: TASK_EVENT_TYPE.PROGRESS,
-      taskType: job.data.type,
+      taskType: context.data.type,
       progress: value,
       payload: nextPayload,
     })
@@ -139,36 +177,40 @@ export async function reportTaskProgress(job: Job<TaskJobData>, progress: number
     },
   })
 
-  const updated = await tryUpdateTaskProgress(job.data.taskId, value, nextPayload)
+  const updated = await tryUpdateTaskProgress(context.data.taskId, value, nextPayload)
   if (!updated) {
     return
   }
   await publishLifecycleEvent({
-    taskId: job.data.taskId,
-    projectId: job.data.projectId,
-    userId: job.data.userId,
+    taskId: context.data.taskId,
+    projectId: context.data.projectId,
+    userId: context.data.userId,
     type: TASK_EVENT_TYPE.PROGRESS,
-    taskType: job.data.type,
-    targetType: job.data.targetType,
-    targetId: job.data.targetId,
-    episodeId: job.data.episodeId || null,
+    taskType: context.data.type,
+    targetType: context.data.targetType,
+    targetId: context.data.targetId,
+    episodeId: context.data.episodeId || null,
     payload: {
       progress: value,
       ...nextPayload,
       trace: {
-        requestId: job.data.trace?.requestId || null,
+        requestId: context.data.trace?.requestId || null,
       },
     },
-    persist: shouldPersistRunStreamReplay(job.data.type),
+    persist: shouldPersistRunStreamReplay(context.data.type),
   })
 }
 
-export async function reportTaskStreamChunk(
-  job: Job<TaskJobData>,
+export async function reportTaskProgress(job: Job<TaskJobData>, progress: number, payload?: Record<string, unknown>) {
+  await reportTaskProgressContext(buildTaskExecutionContextFromJob(job), progress, payload)
+}
+
+export async function reportTaskStreamChunkContext(
+  context: TaskExecutionContext,
   chunk: LLMStreamChunk,
   payload?: Record<string, unknown>,
 ) {
-  const mergedPayload: Record<string, unknown> = withFlowFields(job.data, {
+  const mergedPayload: Record<string, unknown> = withFlowFields(context.data, {
     ...(payload || {}),
     displayMode: 'detail',
     stream: chunk,
@@ -177,19 +219,27 @@ export async function reportTaskStreamChunk(
   })
 
   await publishStreamEvent({
-    taskId: job.data.taskId,
-    projectId: job.data.projectId,
-    userId: job.data.userId,
-    taskType: job.data.type,
-    targetType: job.data.targetType,
-    targetId: job.data.targetId,
-    episodeId: job.data.episodeId || null,
+    taskId: context.data.taskId,
+    projectId: context.data.projectId,
+    userId: context.data.userId,
+    taskType: context.data.type,
+    targetType: context.data.targetType,
+    targetId: context.data.targetId,
+    episodeId: context.data.episodeId || null,
     payload: {
       ...mergedPayload,
       trace: {
-        requestId: job.data.trace?.requestId || null,
+        requestId: context.data.trace?.requestId || null,
       },
     },
-    persist: shouldPersistRunStreamReplay(job.data.type),
+    persist: shouldPersistRunStreamReplay(context.data.type),
   })
+}
+
+export async function reportTaskStreamChunk(
+  job: Job<TaskJobData>,
+  chunk: LLMStreamChunk,
+  payload?: Record<string, unknown>,
+) {
+  await reportTaskStreamChunkContext(buildTaskExecutionContextFromJob(job), chunk, payload)
 }

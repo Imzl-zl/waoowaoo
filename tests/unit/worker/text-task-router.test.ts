@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { TASK_TYPE } from '@/lib/task/types'
+import type { TaskExecutionContext } from '@/lib/workers/shared'
 
 const handleStoryToScriptTaskMock = vi.hoisted(() => vi.fn())
+const handleStoryToScriptTaskContextMock = vi.hoisted(() => vi.fn())
 const handleScriptToStoryboardTaskMock = vi.hoisted(() => vi.fn())
+const handleScriptToStoryboardTaskContextMock = vi.hoisted(() => vi.fn())
 const handleVoiceAnalyzeTaskMock = vi.hoisted(() => vi.fn())
 const handleAnalyzeNovelTaskMock = vi.hoisted(() => vi.fn())
 const handleAiStoryExpandTaskMock = vi.hoisted(() => vi.fn())
@@ -18,8 +21,14 @@ const handleReferenceToCharacterTaskMock = vi.hoisted(() => vi.fn())
 const handleRegenerateStoryboardTextTaskMock = vi.hoisted(() => vi.fn())
 const handleInsertPanelTaskMock = vi.hoisted(() => vi.fn())
 
-vi.mock('@/lib/workers/handlers/story-to-script', () => ({ handleStoryToScriptTask: handleStoryToScriptTaskMock }))
-vi.mock('@/lib/workers/handlers/script-to-storyboard', () => ({ handleScriptToStoryboardTask: handleScriptToStoryboardTaskMock }))
+vi.mock('@/lib/workers/handlers/story-to-script', () => ({
+  handleStoryToScriptTask: handleStoryToScriptTaskMock,
+  handleStoryToScriptTaskContext: handleStoryToScriptTaskContextMock,
+}))
+vi.mock('@/lib/workers/handlers/script-to-storyboard', () => ({
+  handleScriptToStoryboardTask: handleScriptToStoryboardTaskMock,
+  handleScriptToStoryboardTaskContext: handleScriptToStoryboardTaskContextMock,
+}))
 vi.mock('@/lib/workers/handlers/voice-analyze', () => ({ handleVoiceAnalyzeTask: handleVoiceAnalyzeTaskMock }))
 vi.mock('@/lib/workers/handlers/analyze-novel', () => ({ handleAnalyzeNovelTask: handleAnalyzeNovelTaskMock }))
 vi.mock('@/lib/workers/handlers/ai-story-expand', () => ({ handleAiStoryExpandTask: handleAiStoryExpandTaskMock }))
@@ -35,7 +44,11 @@ vi.mock('@/lib/workers/handlers/reference-to-character', () => ({ handleReferenc
 vi.mock('@/lib/workers/handlers/regenerate-storyboard-text', () => ({ handleRegenerateStoryboardTextTask: handleRegenerateStoryboardTextTaskMock }))
 vi.mock('@/lib/workers/handlers/insert-panel', () => ({ handleInsertPanelTask: handleInsertPanelTaskMock }))
 
-import { resolveTextTaskHandler } from '@/lib/workers/handlers/text-task-router'
+import {
+  resolveTextTaskContextHandler,
+  resolveTextTaskHandler,
+  runTextTaskHandlerWithContext,
+} from '@/lib/workers/handlers/text-task-router'
 
 describe('text task router', () => {
   it('routes grouped task types to the expected handlers', () => {
@@ -55,5 +68,42 @@ describe('text task router', () => {
 
   it('throws for unsupported task types', () => {
     expect(() => resolveTextTaskHandler('unsupported_text_task')).toThrow('Unsupported text task type: unsupported_text_task')
+  })
+
+  it('routes supported run-centric task types to context handlers', async () => {
+    const context: TaskExecutionContext = {
+      queueName: 'temporal:text',
+      data: {
+        taskId: 'task-1',
+        type: TASK_TYPE.STORY_TO_SCRIPT_RUN,
+        locale: 'zh',
+        projectId: 'project-1',
+        episodeId: 'episode-1',
+        targetType: 'NovelPromotionEpisode',
+        targetId: 'episode-1',
+        payload: {},
+        billingInfo: null,
+        userId: 'user-1',
+        trace: null,
+      },
+      retryState: {
+        attemptsMade: 0,
+        maxAttempts: 5,
+        backoff: null,
+      },
+    }
+
+    expect(resolveTextTaskContextHandler(TASK_TYPE.STORY_TO_SCRIPT_RUN)).toBe(handleStoryToScriptTaskContextMock)
+    expect(resolveTextTaskContextHandler(TASK_TYPE.SCRIPT_TO_STORYBOARD_RUN)).toBe(handleScriptToStoryboardTaskContextMock)
+
+    await runTextTaskHandlerWithContext(context)
+    expect(handleStoryToScriptTaskContextMock).toHaveBeenCalledWith(context)
+    expect(handleStoryToScriptTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('throws for unsupported context task types instead of creating a legacy job', () => {
+    expect(() => resolveTextTaskContextHandler(TASK_TYPE.VOICE_ANALYZE)).toThrow(
+      `Unsupported context text task type: ${TASK_TYPE.VOICE_ANALYZE}`,
+    )
   })
 })

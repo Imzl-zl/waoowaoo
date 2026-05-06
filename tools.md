@@ -30,6 +30,7 @@
 - 关键入口路径：`src/lib/storage/init.ts`、`src/lib/workers/index.ts`、`scripts/watchdog.ts`、`scripts/bull-board.ts`、`src/lib/run-runtime/service.ts`、`src/lib/workflow-engine/registry.ts`
 - Temporal metadata 写入入口：`src/lib/run-runtime/service.ts` 的 `recordTemporalWorkflowStart`
 - Temporal 显式启动+metadata 投影入口：`src/lib/workflow-runtime/temporal/launch.ts` 的 `launchTemporalWorkflowRun`
+- Task execution launcher 入口：`src/lib/task/execution-launcher.ts` 的 `launchTaskExecution`；默认 BullMQ，显式 `TASK_EXECUTION_RUNTIME=temporal_run_task` 时仅支持 `story_to_script_run` / `script_to_storyboard_run` 并启动 `runTaskWorkflow`。
 - Temporal 显式取消入口：`src/lib/workflow-runtime/temporal/cancel.ts` 的 `cancelTemporalWorkflowRun`
 - run cancel 控制面协调入口：`src/lib/run-runtime/cancel.ts` 的 `requestManagedRunCancel`
 - Temporal lifecycle read-model 投影入口：`src/lib/workflow-runtime/temporal/read-model.ts` 的 `recordTemporalRunLifecycleEvent`
@@ -38,6 +39,8 @@
 - Temporal step lifecycle Activity 已支持可选 `TemporalWorkflowStepDescriptor`；未传时默认 smoke step，后续业务 workflow 应显式传 `stepKey` / `stepTitle` / `stepIndex` / `stepTotal` / `attempt`。
 - Temporal smoke workflow 当前会按 `run.start -> step.start -> step.complete -> run.complete` 写低频 read model lifecycle；它仍只在显式 Temporal worker 路径中运行，不接管业务任务。
 - Temporal run-centric text task workflow：`runTaskWorkflow` -> `executeRunCentricTask`（`src/lib/workflow-runtime/temporal/run-task.ts`），当前只支持 `story_to_script_run` / `script_to_storyboard_run`，复用既有 text worker lifecycle。
+- Worker task lifecycle context 入口：`src/lib/workers/shared.ts` 的 `TaskExecutionContext` / `withTaskLifecycleContext` / `reportTaskProgressContext`；BullMQ workers 仍用 `withTaskLifecycle(job, handler)` adapter。
+- Run-centric text handler context 入口：`handleStoryToScriptTaskContext` / `handleScriptToStoryboardTaskContext`；旧 `handleStoryToScriptTask(job)` / `handleScriptToStoryboardTask(job)` 只作为 BullMQ adapter。
 - 数据 / 配置 / 约束根目录：`prisma/`、`standards/`、`messages/`、`scripts/guards/`、`tests/contracts/`、`.codex-tasks/`
 
 ## Patterns
@@ -45,8 +48,11 @@
 - 模型配置改动通常需要同时触达 `src/lib/user-api/api-config/*`、`standards/*`、`src/lib/model-config-contract.ts` 与对应 guards / tests，而不是只改其中一处。
 - workflow / task 改动通常横跨 `src/lib/task/*`、`src/lib/workers/*`、`src/lib/run-runtime/*`、`src/lib/workflow-engine/*` 与相应测试目录。
 - Temporal start result 写入现有 run read model 时统一调用 `recordTemporalWorkflowStart`，不要在 API route / submitter / worker handler 里直接散写 `GraphRun` Temporal 字段。
-- 单个业务 workflow 正式切流时优先经 `launchTemporalWorkflowRun` 串联 Temporal start 与 metadata 投影；当前默认任务提交链路仍不调用它。
+- 单个业务 workflow 正式切流时优先经 `launchTaskExecution` 路由，再由 Temporal 分支调用 `launchTemporalWorkflowRun` 串联 start 与 metadata 投影；不要在 `submitTask` 中直接写 runtime 分支或直接调用 `addTaskJob`。
+- `TASK_EXECUTION_RUNTIME` 只接受 `bullmq` / `temporal_run_task`；默认空值为 `bullmq`。Temporal runtime 不支持的 task type 必须显式失败，不做 BullMQ fallback。
 - Temporal run-task wrapper 不写额外 smoke lifecycle；成功以持久化 `Task.status=completed` 为准，`failed` / `canceled` / `dismissed` 转 non-retryable `TASK_TERMINAL_FAILURE`。
+- Temporal run-task Activity 不直接 import BullMQ `Job`、不创建 fake job shell；Activity 构造 `TaskExecutionContext`，再由 `runTextTaskHandlerWithContext` dispatch context-native handler。
+- `runTextTaskHandlerWithContext` 只 dispatch `TEXT_TASK_CONTEXT_HANDLERS` 中显式登记的任务类型；不支持时抛 `Unsupported context text task type`，不要回退 legacy Job handler。
 - run cancel API 通过 `requestManagedRunCancel` 接入 Temporal cancellation；有 Temporal metadata 时必须调用 `cancelTemporalWorkflowRun` 并同时传入 `temporalWorkflowId` 与 `temporalFirstExecutionRunId`，legacy linked task 仍走 `cancelTask`。
 - run cancel 只在 `requestRunCancel` 后状态为 `canceling` / `canceled` 时触发 Temporal / task 取消和 `run.canceled` 事件；terminal run 不应再触发外部取消副作用。
 - Temporal Activity 写低频 run/step lifecycle projection 时走 `recordTemporalRunLifecycleEvent`；它会为 `appendRunEventWithSeq` 生成 `GraphEvent.idempotencyKey`，避免 Activity retry 重复追加事件。
@@ -68,3 +74,4 @@
 - 浏览器走纯 HTTP 时可能受并发连接限制导致卡顿；README 给出的 `caddy run --config Caddyfile` 是本地 HTTPS 方案。
 - 版本升级时 README 明确要求必要时执行 `docker compose down -v`、重新拉取 compose 文件并清浏览器缓存。
 - `.dockerignore` 会排除 `*.md`、`tests`、`docs`、`AGENTS.md` 等内容；容器运行时不能作为协作文档真值来源。
+- DB-backed integration tests 需要 Docker；`BILLING_TEST_BOOTSTRAP=1` / `SYSTEM_TEST_BOOTSTRAP=1` 会调用 `docker compose -f docker-compose.test.yml down -v --remove-orphans` 并清掉同一 compose project 的本地服务。跑完后若还要开发，重启 `docker compose up mysql redis minio -d`。

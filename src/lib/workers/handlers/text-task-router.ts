@@ -1,5 +1,6 @@
 import type { Job } from 'bullmq'
 import { TASK_TYPE, type TaskJobData } from '@/lib/task/types'
+import type { TaskExecutionContext } from '@/lib/workers/shared'
 import { handleAiStoryExpandTask } from './ai-story-expand'
 import { handleAnalyzeGlobalTask } from './analyze-global'
 import { handleAnalyzeNovelTask } from './analyze-novel'
@@ -12,12 +13,19 @@ import { handleInsertPanelTask } from './insert-panel'
 import { handleReferenceToCharacterTask } from './reference-to-character'
 import { handleRegenerateStoryboardTextTask } from './regenerate-storyboard-text'
 import { handleScreenplayConvertTask } from './screenplay-convert'
-import { handleScriptToStoryboardTask } from './script-to-storyboard'
+import {
+  handleScriptToStoryboardTask,
+  handleScriptToStoryboardTaskContext,
+} from './script-to-storyboard'
 import { handleShotAITask } from './shot-ai-tasks'
-import { handleStoryToScriptTask } from './story-to-script'
+import {
+  handleStoryToScriptTask,
+  handleStoryToScriptTaskContext,
+} from './story-to-script'
 import { handleVoiceAnalyzeTask } from './voice-analyze'
 
 export type TextTaskHandler = (job: Job<TaskJobData>) => Promise<Record<string, unknown> | void>
+export type TextTaskContextHandler = (context: TaskExecutionContext) => Promise<Record<string, unknown> | void>
 
 const TEXT_TASK_HANDLERS: Partial<Record<TaskJobData['type'], TextTaskHandler>> = {
   [TASK_TYPE.STORY_TO_SCRIPT_RUN]: handleStoryToScriptTask,
@@ -49,10 +57,29 @@ const TEXT_TASK_HANDLERS: Partial<Record<TaskJobData['type'], TextTaskHandler>> 
   [TASK_TYPE.INSERT_PANEL]: handleInsertPanelTask,
 }
 
+const TEXT_TASK_CONTEXT_HANDLERS: Partial<Record<TaskJobData['type'], TextTaskContextHandler>> = {
+  [TASK_TYPE.STORY_TO_SCRIPT_RUN]: handleStoryToScriptTaskContext,
+  [TASK_TYPE.SCRIPT_TO_STORYBOARD_RUN]: handleScriptToStoryboardTaskContext,
+}
+
 export function resolveTextTaskHandler(taskType: string): TextTaskHandler {
   const handler = TEXT_TASK_HANDLERS[taskType as TaskJobData['type']]
   if (!handler) {
     throw new Error(`Unsupported text task type: ${taskType}`)
   }
   return handler
+}
+
+export function resolveTextTaskContextHandler(taskType: string): TextTaskContextHandler {
+  const handler = TEXT_TASK_CONTEXT_HANDLERS[taskType as TaskJobData['type']]
+  if (!handler) {
+    throw new Error(`Unsupported context text task type: ${taskType}`)
+  }
+  return handler
+}
+
+export async function runTextTaskHandlerWithContext(
+  context: TaskExecutionContext,
+): Promise<Record<string, unknown> | void> {
+  return await resolveTextTaskContextHandler(context.data.type)(context)
 }

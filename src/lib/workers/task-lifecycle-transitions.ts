@@ -1,4 +1,4 @@
-import { UnrecoverableError, type Job } from 'bullmq'
+import { UnrecoverableError } from 'bullmq'
 import { rollbackTaskBilling, settleTaskBilling } from '@/lib/billing'
 import type { TextUsageEntry } from '@/lib/billing/runtime-usage'
 import type { NormalizedError } from '@/lib/errors/types'
@@ -12,6 +12,7 @@ import {
 import { buildTaskProgressMessage, getTaskStageLabel } from '@/lib/task/progress-message'
 import { TASK_EVENT_TYPE, type TaskBillingInfo, type TaskJobData } from '@/lib/task/types'
 import {
+  type TaskRetryState,
   buildErrorCauseChain,
   shouldRetryInQueue,
 } from './task-lifecycle-helpers'
@@ -56,39 +57,41 @@ export async function handleInactiveTaskStart(params: {
 }
 
 export async function publishProcessingLifecycle(params: {
-  job: Job<TaskJobData>
+  taskId: string
+  data: TaskJobData
+  queueName: string
 }) {
-  const processingPayload = withFlowFields(params.job.data, {
-    queue: params.job.queueName,
+  const processingPayload = withFlowFields(params.data, {
+    queue: params.queueName,
     stage: 'received',
     stageLabel: getTaskStageLabel('received'),
     displayMode: 'loading',
     trace: {
-      requestId: params.job.data.trace?.requestId || null,
+      requestId: params.data.trace?.requestId || null,
     },
   })
   const processingMessage = buildTaskProgressMessage({
     eventType: TASK_EVENT_TYPE.PROCESSING,
-    taskType: params.job.data.type,
+    taskType: params.data.type,
     payload: processingPayload,
   })
 
   await publishRunStartEventIfNeeded({
-    jobData: params.job.data,
+    jobData: params.data,
     payload: {
       ...processingPayload,
       message: processingMessage,
     },
   })
   await publishLifecycleEvent({
-    taskId: params.job.data.taskId,
-    projectId: params.job.data.projectId,
-    userId: params.job.data.userId,
+    taskId: params.taskId,
+    projectId: params.data.projectId,
+    userId: params.data.userId,
     type: TASK_EVENT_TYPE.PROCESSING,
-    taskType: params.job.data.type,
-    targetType: params.job.data.targetType,
-    targetId: params.job.data.targetId,
-    episodeId: params.job.data.episodeId || null,
+    taskType: params.data.type,
+    targetType: params.data.targetType,
+    targetId: params.data.targetId,
+    episodeId: params.data.episodeId || null,
     payload: {
       ...processingPayload,
       message: processingMessage,
@@ -187,7 +190,8 @@ export async function handleTerminatedTask(params: {
 }
 
 export async function handleWorkerFailure(params: {
-  job: Job<TaskJobData>
+  retryState: TaskRetryState
+  queueName: string
   taskId: string
   data: TaskJobData
   error: unknown
@@ -197,7 +201,7 @@ export async function handleWorkerFailure(params: {
 }) {
   const normalizedError = normalizeAnyError(params.error, { context: 'worker' })
   const retryDecision = shouldRetryInQueue({
-    job: params.job,
+    retryState: params.retryState,
     normalizedError,
   })
   const errorCauseChain = buildErrorCauseChain(params.error)
@@ -207,7 +211,7 @@ export async function handleWorkerFailure(params: {
     normalizedError,
     errorCauseChain,
     durationMs: Date.now() - params.startedAt,
-    queueName: params.job.queueName,
+    queueName: params.queueName,
   })
 
   if (retryDecision.enabled) {
@@ -222,7 +226,7 @@ export async function handleWorkerFailure(params: {
       normalizedError,
       retryDecision,
       logger: params.logger,
-      queueName: params.job.queueName,
+      queueName: params.queueName,
       startedAt: params.startedAt,
     })
     throw (params.error instanceof Error ? params.error : new Error(normalizedError.message || 'Task failed'))

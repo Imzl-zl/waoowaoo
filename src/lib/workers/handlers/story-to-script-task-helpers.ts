@@ -1,12 +1,10 @@
-import type { Job } from 'bullmq'
 import { executeAiTextStep } from '@/lib/ai-runtime'
 import { logAIAnalysis } from '@/lib/logging/semantic'
-import { reportTaskProgress } from '@/lib/workers/shared'
+import { reportTaskProgressContext, type TaskExecutionContext } from '@/lib/workers/shared'
 import type {
   StoryToScriptStepMeta,
   StoryToScriptStepOutput,
 } from '@/lib/novel-promotion/story-to-script/orchestrator'
-import type { TaskJobData } from '@/lib/task/types'
 import { getPromptTemplate, PROMPT_IDS } from '@/lib/prompt-i18n'
 
 type FlushableCallbacks = {
@@ -27,8 +25,8 @@ export function resolveRetryClipId(retryStepKey: string): string | null {
   return clipId || null
 }
 
-export function buildWorkflowWorkerId(job: Job<TaskJobData>, label: string) {
-  return `${label}:${job.queueName}:${job.data.taskId}`
+export function buildWorkflowWorkerId(context: TaskExecutionContext, label: string) {
+  return `${label}:${context.queueName}:${context.data.taskId}`
 }
 
 export function getStoryToScriptPromptTemplates(locale: 'zh' | 'en') {
@@ -61,7 +59,7 @@ export function buildStoryToScriptBaseAssets(novelData: {
 }
 
 export function createStoryToScriptRunStep(params: {
-  job: Job<TaskJobData>
+  context: TaskExecutionContext
   projectId: string
   projectName: string
   model: string
@@ -84,7 +82,7 @@ export function createStoryToScriptRunStep(params: {
       || (params.retryStepKey && meta.stepId === params.retryStepKey ? params.retryStepAttempt : 1)
     await params.assertRunActive(`story_to_script_step:${meta.stepId}`)
     const progress = 15 + Math.min(55, Math.floor((meta.stepIndex / Math.max(1, meta.stepTotal)) * 55))
-    await reportTaskProgress(params.job, progress, {
+    await reportTaskProgressContext(params.context, progress, {
       stage: 'story_to_script_step',
       stageLabel: 'progress.stage.storyToScriptStep',
       displayMode: 'detail',
@@ -101,14 +99,14 @@ export function createStoryToScriptRunStep(params: {
       blockedBy: Array.isArray(meta.blockedBy) ? meta.blockedBy : [],
     })
 
-    logAIAnalysis(params.job.data.userId, 'worker', params.projectId, params.projectName, {
+    logAIAnalysis(params.context.data.userId, 'worker', params.projectId, params.projectName, {
       action: `STORY_TO_SCRIPT_PROMPT:${action}`,
       input: { stepId: meta.stepId, stepTitle: meta.stepTitle, prompt },
       model: params.model,
     })
 
     const output = await executeAiTextStep({
-      userId: params.job.data.userId,
+      userId: params.context.data.userId,
       model: params.model,
       messages: [{ role: 'user', content: prompt }],
       projectId: params.projectId,
@@ -123,7 +121,7 @@ export function createStoryToScriptRunStep(params: {
     })
     await params.callbacks.flush()
 
-    logAIAnalysis(params.job.data.userId, 'worker', params.projectId, params.projectName, {
+    logAIAnalysis(params.context.data.userId, 'worker', params.projectId, params.projectName, {
       action: `STORY_TO_SCRIPT_OUTPUT:${action}`,
       output: {
         stepId: meta.stepId,

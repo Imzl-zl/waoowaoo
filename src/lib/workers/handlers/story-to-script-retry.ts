@@ -1,12 +1,10 @@
 import { withInternalLLMStreamCallbacks } from '@/lib/llm-observe/internal-stream-context'
-import { reportTaskProgress } from '@/lib/workers/shared'
+import { reportTaskProgressContext, type TaskExecutionContext } from '@/lib/workers/shared'
 import { createArtifact, listArtifacts } from '@/lib/run-runtime/service'
 import { parseScreenplayPayload } from './screenplay-convert-helpers'
 import { asString, type AnyObj } from './story-to-script-helpers'
 import type { StoryToScriptStepMeta, StoryToScriptStepOutput } from '@/lib/novel-promotion/story-to-script/orchestrator'
-import type { TaskJobData } from '@/lib/task/types'
 import { prisma } from '@/lib/prisma'
-import type { Job } from 'bullmq'
 
 type FlushableCallbacks = {
   flush: () => Promise<void>
@@ -20,7 +18,7 @@ type StoryToScriptRunStep = (
 ) => Promise<StoryToScriptStepOutput>
 
 export async function runStoryToScriptRetryStep(params: {
-  job: Job<TaskJobData>
+  context: TaskExecutionContext
   callbacks: FlushableCallbacks
   runId: string
   retryStepKey: string
@@ -151,7 +149,7 @@ export async function runStoryToScriptRetryStep(params: {
     })
   })
 
-  await reportTaskProgress(params.job, 96, {
+  await reportTaskProgressContext(params.context, 96, {
     stage: 'story_to_script_persist_done',
     stageLabel: 'progress.stage.storyToScriptPersistDone',
     displayMode: 'detail',

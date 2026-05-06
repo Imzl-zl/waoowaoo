@@ -1,6 +1,5 @@
 import { activityInfo } from '@temporalio/activity'
 import { ApplicationFailure } from '@temporalio/common'
-import { UnrecoverableError, type Job } from 'bullmq'
 import { getTaskById } from '@/lib/task/service'
 import {
   TASK_STATUS,
@@ -10,8 +9,12 @@ import {
   type TaskType,
 } from '@/lib/task/types'
 import { locales, type Locale } from '@/i18n/routing'
-import { reportTaskProgress, withTaskLifecycle } from '@/lib/workers/shared'
-import { resolveTextTaskHandler } from '@/lib/workers/handlers/text-task-router'
+import {
+  reportTaskProgressContext,
+  withTaskLifecycleContext,
+  type TaskExecutionContext,
+} from '@/lib/workers/shared'
+import { runTextTaskHandlerWithContext } from '@/lib/workers/handlers/text-task-router'
 import { normalizeTemporalWorkflowRunInput } from './contract'
 import type { TemporalTaskWorkflowResult, TemporalWorkflowRunInput } from './types'
 
@@ -111,22 +114,23 @@ async function assertTaskCompleted(taskId: string): Promise<void> {
   throw new Error(`task lifecycle ended without completion: ${task.status}`)
 }
 
-export function createTemporalTaskJob(data: TaskJobData, attempt: number): Job<TaskJobData> {
+export function createTemporalTaskExecutionContext(
+  data: TaskJobData,
+  attempt: number,
+): TaskExecutionContext {
   const attemptsMade = Math.max(0, Math.floor(attempt) - 1)
   return {
-    id: data.taskId,
-    name: data.type,
     queueName: TEMPORAL_TEXT_QUEUE_NAME,
     data,
-    attemptsMade,
-    opts: {
-      attempts: TEMPORAL_TASK_MAX_ATTEMPTS,
+    retryState: {
+      attemptsMade,
+      maxAttempts: TEMPORAL_TASK_MAX_ATTEMPTS,
       backoff: {
         type: 'exponential',
         delay: TEMPORAL_TASK_BACKOFF_MS,
       },
     },
-  } as unknown as Job<TaskJobData>
+  }
 }
 
 export function buildTaskJobDataFromTask(
@@ -186,7 +190,6 @@ function buildTemporalTaskWorkflowResult(params: {
 function toNonRetryableActivityFailure(error: unknown): ApplicationFailure | null {
   if (
     error instanceof NonRetryableTemporalTaskError ||
-    error instanceof UnrecoverableError ||
     (error instanceof Error && error.name === 'UnrecoverableError')
   ) {
     return ApplicationFailure.nonRetryable(
@@ -207,10 +210,10 @@ export const taskActivities = {
       const taskRow = await getTaskById(requireWorkflowTaskId(workflow))
       if (!taskRow) throw new NonRetryableTemporalTaskError('task not found')
       const task = buildTaskJobDataFromTask(workflow, taskRow)
-      const job = createTemporalTaskJob(task, current.attempt)
-      await withTaskLifecycle(job, async (nextJob) => {
-        await reportTaskProgress(nextJob, TEMPORAL_TASK_RECEIVED_PROGRESS, { stage: 'received' })
-        return await resolveTextTaskHandler(nextJob.data.type)(nextJob)
+      const context = createTemporalTaskExecutionContext(task, current.attempt)
+      await withTaskLifecycleContext(context, async (nextContext) => {
+        await reportTaskProgressContext(nextContext, TEMPORAL_TASK_RECEIVED_PROGRESS, { stage: 'received' })
+        return await runTextTaskHandlerWithContext(nextContext)
       })
       await assertTaskCompleted(task.taskId)
       return buildTemporalTaskWorkflowResult({

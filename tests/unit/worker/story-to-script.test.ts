@@ -54,12 +54,32 @@ vi.mock('@/lib/llm-observe/internal-stream-context', () => ({
 }))
 vi.mock('@/lib/logging/semantic', () => ({ logAIAnalysis: vi.fn() }))
 vi.mock('@/lib/logging/file-writer', () => ({ onProjectNameAvailable: vi.fn() }))
-vi.mock('@/lib/workers/shared', () => ({ reportTaskProgress: workerMock.reportTaskProgress }))
+vi.mock('@/lib/workers/shared', () => ({
+  buildTaskExecutionContextFromJob: (job: Job<TaskJobData>) => ({
+    data: job.data,
+    queueName: job.queueName || 'text',
+    retryState: {
+      attemptsMade: 0,
+      maxAttempts: 1,
+      backoff: null,
+    },
+  }),
+  reportTaskProgress: workerMock.reportTaskProgress,
+  reportTaskProgressContext: workerMock.reportTaskProgress,
+}))
 vi.mock('@/lib/workers/utils', () => ({ assertTaskActive: workerMock.assertTaskActive }))
 vi.mock('@/lib/novel-promotion/story-to-script/orchestrator', () => orchestratorMock)
 vi.mock('@/lib/workers/handlers/llm-stream', () => ({
   createWorkerLLMStreamContext: vi.fn(() => ({ streamRunId: 'run-1', nextSeqByStepLane: {} })),
+  createWorkerLLMStreamContextForTask: vi.fn(() => ({ streamRunId: 'run-1', nextSeqByStepLane: {} })),
   createWorkerLLMStreamCallbacks: vi.fn(() => ({
+    onStage: vi.fn(),
+    onChunk: vi.fn(),
+    onComplete: vi.fn(),
+    onError: vi.fn(),
+    flush: vi.fn(async () => undefined),
+  })),
+  createWorkerLLMStreamCallbacksContext: vi.fn(() => ({
     onStage: vi.fn(),
     onChunk: vi.fn(),
     onComplete: vi.fn(),

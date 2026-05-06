@@ -8,8 +8,19 @@ const assertTaskActiveMock = vi.hoisted(() => vi.fn(async () => undefined))
 const isTaskActiveMock = vi.hoisted(() => vi.fn(async () => true))
 
 vi.mock('@/lib/workers/shared', () => ({
+  buildTaskExecutionContextFromJob: (job: Job<TaskJobData>) => ({
+    data: job.data,
+    queueName: job.queueName || 'text',
+    retryState: {
+      attemptsMade: 0,
+      maxAttempts: 1,
+      backoff: null,
+    },
+  }),
   reportTaskProgress: reportTaskProgressMock,
+  reportTaskProgressContext: reportTaskProgressMock,
   reportTaskStreamChunk: reportTaskStreamChunkMock,
+  reportTaskStreamChunkContext: reportTaskStreamChunkMock,
 }))
 
 vi.mock('@/lib/workers/utils', () => ({

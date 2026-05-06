@@ -6,8 +6,15 @@ import {
 } from '@/lib/config-service'
 import { onProjectNameAvailable } from '@/lib/logging/file-writer'
 import { TaskTerminatedError } from '@/lib/task/errors'
-import { reportTaskProgress } from '@/lib/workers/shared'
-import { createWorkerLLMStreamCallbacks, createWorkerLLMStreamContext } from './llm-stream'
+import {
+  buildTaskExecutionContextFromJob,
+  reportTaskProgressContext,
+  type TaskExecutionContext,
+} from '@/lib/workers/shared'
+import {
+  createWorkerLLMStreamCallbacksContext,
+  createWorkerLLMStreamContextForTask,
+} from './llm-stream'
 import type { TaskJobData } from '@/lib/task/types'
 import {
   asString,
@@ -30,9 +37,14 @@ import { runStoryToScriptRetryStep } from './story-to-script-retry'
 import { runStoryToScriptMainFlow } from './story-to-script-pipeline'
 
 export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
-  const payload = (job.data.payload || {}) as AnyObj
-  const projectId = job.data.projectId
-  const episodeIdRaw = asString(payload.episodeId || job.data.episodeId || '')
+  return await handleStoryToScriptTaskContext(buildTaskExecutionContextFromJob(job))
+}
+
+export async function handleStoryToScriptTaskContext(context: TaskExecutionContext) {
+  const data = context.data
+  const payload = (data.payload || {}) as AnyObj
+  const projectId = data.projectId
+  const episodeIdRaw = asString(payload.episodeId || data.episodeId || '')
   const episodeId = episodeIdRaw.trim()
   const contentRaw = asString(payload.content)
   const inputModel = asString(payload.model).trim()
@@ -86,18 +98,18 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
   }
 
   const model = await resolveAnalysisModel({
-    userId: job.data.userId,
+    userId: data.userId,
     inputModel,
     projectAnalysisModel: novelData.analysisModel,
   })
   const [llmCapabilityOptions, workflowConcurrency] = await Promise.all([
     resolveProjectModelCapabilityGenerationOptions({
       projectId,
-      userId: job.data.userId,
+      userId: data.userId,
       modelType: 'llm',
       modelKey: model,
     }),
-    getUserWorkflowConcurrencyConfig(job.data.userId),
+    getUserWorkflowConcurrencyConfig(data.userId),
   ])
   const capabilityReasoningEffort = llmCapabilityOptions.reasoningEffort
   const reasoningEffort = requestedReasoningEffort
@@ -107,7 +119,7 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
   if (!mergedContent.trim()) {
     throw new Error('content is required')
   }
-  const promptTemplates = getStoryToScriptPromptTemplates(job.data.locale || 'zh')
+  const promptTemplates = getStoryToScriptPromptTemplates(data.locale || 'zh')
   const maxLength = 30000
   const content = mergedContent.length > maxLength ? mergedContent.slice(0, maxLength) : mergedContent
   const payloadMeta = typeof payload.meta === 'object' && payload.meta !== null
@@ -123,7 +135,7 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
   if (retryStepKey && !retryClipId) {
     throw new Error(`unsupported retry step for story_to_script: ${retryStepKey}`)
   }
-  const workerId = buildWorkflowWorkerId(job, 'story_to_script')
+  const workerId = buildWorkflowWorkerId(context, 'story_to_script')
   const assertRunActive = async (stage: string) => {
     await assertWorkflowRunActive({
       runId,
@@ -131,8 +143,8 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
       stage,
     })
   }
-  const streamContext = createWorkerLLMStreamContext(job, 'story_to_script')
-  const callbacks = createWorkerLLMStreamCallbacks(job, streamContext, {
+  const streamContext = createWorkerLLMStreamContextForTask(data.taskId, 'story_to_script')
+  const callbacks = createWorkerLLMStreamCallbacksContext(context, streamContext, {
     assertActive: async (stage) => {
       await assertRunActive(stage)
     },
@@ -150,7 +162,7 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
   })
 
   const runStep = createStoryToScriptRunStep({
-    job,
+    context,
     projectId,
     projectName: project.name,
     model,
@@ -165,10 +177,10 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
 
   const leaseResult = await withWorkflowRunLease({
     runId,
-    userId: job.data.userId,
+    userId: data.userId,
     workerId,
     run: async () => {
-      await reportTaskProgress(job, 10, {
+      await reportTaskProgressContext(context, 10, {
         stage: 'story_to_script_prepare',
         stageLabel: 'progress.stage.storyToScriptPrepare',
         displayMode: 'detail',
@@ -176,7 +188,7 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
 
       if (retryClipId) {
         return await runStoryToScriptRetryStep({
-          job,
+          context,
           callbacks,
           runId,
           retryStepKey,
@@ -193,7 +205,7 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
         locations: (novelData.locations || []) as Array<Record<string, unknown> & { name: string }>,
       })
       return await runStoryToScriptMainFlow({
-        job,
+        context,
         callbacks,
         runId,
         episodeId,

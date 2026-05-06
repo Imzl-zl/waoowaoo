@@ -2,12 +2,10 @@ import { withInternalLLMStreamCallbacks } from '@/lib/llm-observe/internal-strea
 import { logAIAnalysis } from '@/lib/logging/semantic'
 import { buildCharactersIntroduction } from '@/lib/constants'
 import { TaskTerminatedError } from '@/lib/task/errors'
-import { reportTaskProgress } from '@/lib/workers/shared'
+import { reportTaskProgressContext, type TaskExecutionContext } from '@/lib/workers/shared'
 import { JsonParseError, runScriptToStoryboardOrchestrator, type ScriptToStoryboardStepMeta, type ScriptToStoryboardStepOutput, type ScriptToStoryboardOrchestratorResult } from '@/lib/novel-promotion/script-to-storyboard/orchestrator'
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompt-i18n'
 import { createArtifact } from '@/lib/run-runtime/service'
-import type { TaskJobData } from '@/lib/task/types'
-import type { Job } from 'bullmq'
 import { buildStoryboardJsonFromClipPanels, parseVoiceLinesJson, persistStoryboardOutputs, type JsonRecord } from './script-to-storyboard-helpers'
 import { runScriptToStoryboardAtomicRetry, type StoryboardRetryTarget } from './script-to-storyboard-atomic-retry'
 
@@ -38,7 +36,7 @@ async function createClipPhaseArtifacts(params: {
 }
 
 export async function runStoryboardOrchestratorFlow(params: {
-  job: Job<TaskJobData>
+  context: TaskExecutionContext
   callbacks: FlushableCallbacks
   concurrency: number
   runId: string
@@ -68,7 +66,7 @@ export async function runStoryboardOrchestratorFlow(params: {
               runId: params.runId,
               retryTarget: params.retryTarget,
               retryStepAttempt: params.retryStepAttempt,
-              locale: params.job.data.locale,
+              locale: params.context.data.locale,
               clip,
               clipIndex,
               totalClipCount: params.allClips.length,
@@ -93,7 +91,7 @@ export async function runStoryboardOrchestratorFlow(params: {
           try {
             return await runScriptToStoryboardOrchestrator({
               concurrency: params.concurrency,
-              locale: params.job.data.locale,
+              locale: params.context.data.locale,
               clips: params.selectedClips,
               novelPromotionData: params.novelPromotionData,
               promptTemplates: params.promptTemplates,
@@ -101,7 +99,7 @@ export async function runStoryboardOrchestratorFlow(params: {
             })
           } catch (error) {
             if (error instanceof JsonParseError) {
-              logAIAnalysis(params.job.data.userId, 'worker', params.projectId, params.projectName, {
+              logAIAnalysis(params.context.data.userId, 'worker', params.projectId, params.projectName, {
                 action: 'SCRIPT_TO_STORYBOARD_PARSE_ERROR',
                 error: {
                   message: error.message,
@@ -140,7 +138,7 @@ export async function runStoryboardOrchestratorFlow(params: {
 }
 
 export async function persistStoryboardTaskOutputs(params: {
-  job: Job<TaskJobData>
+  context: TaskExecutionContext
   callbacks: FlushableCallbacks
   runId: string
   retryStepKey: string
@@ -153,7 +151,7 @@ export async function persistStoryboardTaskOutputs(params: {
   runStep: StoryboardRunStep
   assertRunActive: (stage: string) => Promise<void>
 }) {
-  await reportTaskProgress(params.job, 80, {
+  await reportTaskProgressContext(params.context, 80, {
     stage: 'script_to_storyboard_persist',
     stageLabel: 'progress.stage.scriptToStoryboardPersist',
     displayMode: 'detail',
@@ -166,7 +164,7 @@ export async function persistStoryboardTaskOutputs(params: {
       clipPanels: params.orchestratorResult.clipPanels,
       voiceLineRows: null,
     })
-    await reportTaskProgress(params.job, 96, {
+    await reportTaskProgressContext(params.context, 96, {
       stage: 'script_to_storyboard_persist_done',
       stageLabel: 'progress.stage.scriptToStoryboardPersistDone',
       displayMode: 'detail',
@@ -189,7 +187,7 @@ export async function persistStoryboardTaskOutputs(params: {
 
   const voicePrompt = buildPrompt({
     promptId: PROMPT_IDS.NP_VOICE_ANALYSIS,
-    locale: params.job.data.locale,
+    locale: params.context.data.locale,
     variables: {
       input: params.episodeNovelText,
       characters_lib_name: params.novelCharacters.length > 0
@@ -227,7 +225,7 @@ export async function persistStoryboardTaskOutputs(params: {
         if (error instanceof TaskTerminatedError) throw error
         voiceLastError = error instanceof Error ? error : new Error(String(error))
         if (voiceAttempt < MAX_VOICE_ANALYZE_ATTEMPTS) {
-          await reportTaskProgress(params.job, 84, {
+          await reportTaskProgressContext(params.context, 84, {
             stage: 'script_to_storyboard_step',
             stageLabel: 'progress.stage.scriptToStoryboardStep',
             displayMode: 'detail',
@@ -262,7 +260,7 @@ export async function persistStoryboardTaskOutputs(params: {
     voiceLineRows,
   })
 
-  await reportTaskProgress(params.job, 96, {
+  await reportTaskProgressContext(params.context, 96, {
     stage: 'script_to_storyboard_persist_done',
     stageLabel: 'progress.stage.scriptToStoryboardPersistDone',
     displayMode: 'detail',

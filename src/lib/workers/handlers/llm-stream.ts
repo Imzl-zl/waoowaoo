@@ -1,9 +1,17 @@
 import type { Job } from 'bullmq'
-import { type InternalLLMStreamCallbacks } from '@/lib/llm-observe/internal-stream-context'
+import {
+  type InternalLLMStreamCallbacks,
+  type InternalLLMStreamStepMeta,
+} from '@/lib/llm-observe/internal-stream-context'
 import type { LLMStreamKind } from '@/lib/llm-observe/types'
 import { TaskTerminatedError } from '@/lib/task/errors'
 import { isTaskActive } from '@/lib/task/service'
-import { reportTaskProgress, reportTaskStreamChunk } from '@/lib/workers/shared'
+import {
+  buildTaskExecutionContextFromJob,
+  reportTaskProgressContext,
+  reportTaskStreamChunkContext,
+  type TaskExecutionContext,
+} from '@/lib/workers/shared'
 import type { TaskJobData } from '@/lib/task/types'
 import { assertTaskActive } from '@/lib/workers/utils'
 
@@ -22,8 +30,12 @@ export type WorkerLLMActiveController = {
 }
 
 export function createWorkerLLMStreamContext(job: Job<TaskJobData>, label = 'worker'): WorkerLLMStreamContext {
+  return createWorkerLLMStreamContextForTask(job.data.taskId, label)
+}
+
+export function createWorkerLLMStreamContextForTask(taskId: string, label = 'worker'): WorkerLLMStreamContext {
   return {
-    streamRunId: `run:${job.data.taskId}:${label}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`,
+    streamRunId: `run:${taskId}:${label}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`,
     nextSeqByStepLane: {},
   }
 }
@@ -35,8 +47,51 @@ function nextWorkerStreamSeq(streamContext: WorkerLLMStreamContext, stepId: stri
   return current
 }
 
+function buildStepPayload(step: InternalLLMStreamStepMeta | undefined) {
+  const stepId = typeof step?.id === 'string' && step.id.trim() ? step.id.trim() : null
+  const stepAttempt =
+    typeof step?.attempt === 'number' && Number.isFinite(step.attempt)
+      ? Math.max(1, Math.floor(step.attempt))
+      : null
+  const stepTitle = typeof step?.title === 'string' && step.title.trim() ? step.title.trim() : null
+  const stepIndex =
+    typeof step?.index === 'number' && Number.isFinite(step.index) ? Math.max(1, Math.floor(step.index)) : null
+  const stepTotal =
+    typeof step?.total === 'number' && Number.isFinite(step.total)
+      ? Math.max(stepIndex || 1, Math.floor(step.total))
+      : null
+  return {
+    stepId,
+    ...(stepAttempt ? { stepAttempt } : {}),
+    ...(stepTitle ? { stepTitle } : {}),
+    ...(stepIndex ? { stepIndex } : {}),
+    ...(stepTotal ? { stepTotal } : {}),
+  }
+}
+
 export function createWorkerLLMStreamCallbacks(
   job: Job<TaskJobData>,
+  streamContext: WorkerLLMStreamContext,
+  activeController?: WorkerLLMActiveController,
+): WorkerInternalLLMStreamCallbacks {
+  return createWorkerLLMStreamCallbacksContext(
+    buildTaskExecutionContextFromJob(job),
+    streamContext,
+    {
+      assertActive: async (stage) => {
+        if (activeController?.assertActive) {
+          await activeController.assertActive(stage)
+          return
+        }
+        await assertTaskActive(job, stage)
+      },
+      isActive: activeController?.isActive,
+    },
+  )
+}
+
+export function createWorkerLLMStreamCallbacksContext(
+  context: TaskExecutionContext,
   streamContext: WorkerLLMStreamContext,
   activeController?: WorkerLLMActiveController,
 ): WorkerInternalLLMStreamCallbacks {
@@ -50,7 +105,7 @@ export function createWorkerLLMStreamCallbacks(
   const markTerminated = (stage: string) => {
     if (terminatedError) return
     terminatedError = new TaskTerminatedError(
-      job.data.taskId,
+      context.data.taskId,
       `Task terminated during ${stage}`,
     )
   }
@@ -65,14 +120,16 @@ export function createWorkerLLMStreamCallbacks(
       await activeController.assertActive(stage)
       return
     }
-    await assertTaskActive(job, stage)
+    const active = await isTaskActive(context.data.taskId)
+    if (active) return
+    throw new TaskTerminatedError(context.data.taskId, `Task terminated during ${stage}`)
   }
 
   const probeActive = async () => {
     if (activeController?.isActive) {
       return await activeController.isActive()
     }
-    return await isTaskActive(job.data.taskId)
+    return await isTaskActive(context.data.taskId)
   }
 
   const scheduleActiveProbe = () => {
@@ -124,30 +181,15 @@ export function createWorkerLLMStreamCallbacks(
               ? 'progress.runtime.stage.llmFallbackNonStream'
               : 'progress.runtime.stage.llmCompleted'
       const stageKey = `worker_llm_${stage}`
-      const stepId = typeof step?.id === 'string' && step.id.trim() ? step.id.trim() : null
-      const stepAttempt =
-        typeof step?.attempt === 'number' && Number.isFinite(step.attempt)
-          ? Math.max(1, Math.floor(step.attempt))
-          : null
-      const stepTitle = typeof step?.title === 'string' && step.title.trim() ? step.title.trim() : null
-      const stepIndex =
-        typeof step?.index === 'number' && Number.isFinite(step.index) ? Math.max(1, Math.floor(step.index)) : null
-      const stepTotal =
-        typeof step?.total === 'number' && Number.isFinite(step.total)
-          ? Math.max(stepIndex || 1, Math.floor(step.total))
-          : null
+      const stepPayload = buildStepPayload(step)
       enqueue(`worker_llm_stage:${stage}`, async () => {
-        await reportTaskProgress(job, 65, {
+        await reportTaskProgressContext(context, 65, {
           stage: stageKey,
           stageLabel,
           displayMode: 'detail',
           message: stageLabel,
           streamRunId: streamContext.streamRunId,
-          ...(stepId ? { stepId } : {}),
-          ...(stepAttempt ? { stepAttempt } : {}),
-          ...(stepTitle ? { stepTitle } : {}),
-          ...(stepIndex ? { stepIndex } : {}),
-          ...(stepTotal ? { stepTotal } : {}),
+          ...stepPayload,
           meta: {
             provider: provider || null,
           },
@@ -158,29 +200,18 @@ export function createWorkerLLMStreamCallbacks(
       ensureActiveOrThrow('worker_llm_stream')
       scheduleActiveProbe()
       if (!delta) return
-      const stepId = typeof step?.id === 'string' && step.id.trim() ? step.id.trim() : null
-      const stepAttempt =
-        typeof step?.attempt === 'number' && Number.isFinite(step.attempt)
-          ? Math.max(1, Math.floor(step.attempt))
-          : null
-      const stepTitle = typeof step?.title === 'string' && step.title.trim() ? step.title.trim() : null
-      const stepIndex =
-        typeof step?.index === 'number' && Number.isFinite(step.index) ? Math.max(1, Math.floor(step.index)) : null
-      const stepTotal =
-        typeof step?.total === 'number' && Number.isFinite(step.total)
-          ? Math.max(stepIndex || 1, Math.floor(step.total))
-          : null
+      const stepPayload = buildStepPayload(step)
       const laneKey = lane || (kind === 'reasoning' ? 'reasoning' : 'main')
       for (let i = 0; i < delta.length; i += maxChunkChars) {
         const piece = delta.slice(i, i + maxChunkChars)
         if (!piece) continue
         enqueue('worker_llm_stream', async () => {
-          await reportTaskStreamChunk(
-            job,
+          await reportTaskStreamChunkContext(
+            context,
             {
               kind: kind as LLMStreamKind,
               delta: piece,
-              seq: nextWorkerStreamSeq(streamContext, stepId, laneKey),
+              seq: nextWorkerStreamSeq(streamContext, stepPayload.stepId, laneKey),
               lane: laneKey,
             },
             {
@@ -190,11 +221,7 @@ export function createWorkerLLMStreamCallbacks(
               done: false,
               message: kind === 'reasoning' ? 'progress.runtime.llm.reasoning' : 'progress.runtime.llm.output',
               streamRunId: streamContext.streamRunId,
-              ...(stepId ? { stepId } : {}),
-              ...(stepAttempt ? { stepAttempt } : {}),
-              ...(stepTitle ? { stepTitle } : {}),
-              ...(stepIndex ? { stepIndex } : {}),
-              ...(stepTotal ? { stepTotal } : {}),
+              ...stepPayload,
             },
           )
         })
@@ -202,20 +229,9 @@ export function createWorkerLLMStreamCallbacks(
     },
     onComplete: (text, step) => {
       ensureActiveOrThrow('worker_llm_complete')
-      const stepId = typeof step?.id === 'string' && step.id.trim() ? step.id.trim() : null
-      const stepAttempt =
-        typeof step?.attempt === 'number' && Number.isFinite(step.attempt)
-          ? Math.max(1, Math.floor(step.attempt))
-          : null
-      const stepTitle = typeof step?.title === 'string' && step.title.trim() ? step.title.trim() : null
-      const stepIndex =
-        typeof step?.index === 'number' && Number.isFinite(step.index) ? Math.max(1, Math.floor(step.index)) : null
-      const stepTotal =
-        typeof step?.total === 'number' && Number.isFinite(step.total)
-          ? Math.max(stepIndex || 1, Math.floor(step.total))
-          : null
+      const stepPayload = buildStepPayload(step)
       enqueue('worker_llm_complete', async () => {
-        await reportTaskProgress(job, 90, {
+        await reportTaskProgressContext(context, 90, {
           stage: 'worker_llm_complete',
           stageLabel: 'progress.runtime.stage.llmCompleted',
           displayMode: 'detail',
@@ -223,11 +239,7 @@ export function createWorkerLLMStreamCallbacks(
           done: true,
           ...(typeof text === 'string' ? { output: text } : {}),
           streamRunId: streamContext.streamRunId,
-          ...(stepId ? { stepId } : {}),
-          ...(stepAttempt ? { stepAttempt } : {}),
-          ...(stepTitle ? { stepTitle } : {}),
-          ...(stepIndex ? { stepIndex } : {}),
-          ...(stepTotal ? { stepTotal } : {}),
+          ...stepPayload,
         })
       })
     },
@@ -237,30 +249,15 @@ export function createWorkerLLMStreamCallbacks(
         throw error
       }
       ensureActiveOrThrow('worker_llm_error')
-      const stepId = typeof step?.id === 'string' && step.id.trim() ? step.id.trim() : null
-      const stepAttempt =
-        typeof step?.attempt === 'number' && Number.isFinite(step.attempt)
-          ? Math.max(1, Math.floor(step.attempt))
-          : null
-      const stepTitle = typeof step?.title === 'string' && step.title.trim() ? step.title.trim() : null
-      const stepIndex =
-        typeof step?.index === 'number' && Number.isFinite(step.index) ? Math.max(1, Math.floor(step.index)) : null
-      const stepTotal =
-        typeof step?.total === 'number' && Number.isFinite(step.total)
-          ? Math.max(stepIndex || 1, Math.floor(step.total))
-          : null
+      const stepPayload = buildStepPayload(step)
       enqueue('worker_llm_error', async () => {
-        await reportTaskProgress(job, 90, {
+        await reportTaskProgressContext(context, 90, {
           stage: 'worker_llm_error',
           stageLabel: 'progress.runtime.stage.llmFailed',
           displayMode: 'detail',
           message: error instanceof Error ? error.message : String(error),
           streamRunId: streamContext.streamRunId,
-          ...(stepId ? { stepId } : {}),
-          ...(stepAttempt ? { stepAttempt } : {}),
-          ...(stepTitle ? { stepTitle } : {}),
-          ...(stepIndex ? { stepIndex } : {}),
-          ...(stepTotal ? { stepTotal } : {}),
+          ...stepPayload,
         })
       })
     },

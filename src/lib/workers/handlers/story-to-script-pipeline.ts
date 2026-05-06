@@ -1,5 +1,5 @@
 import { withInternalLLMStreamCallbacks } from '@/lib/llm-observe/internal-stream-context'
-import { reportTaskProgress } from '@/lib/workers/shared'
+import { reportTaskProgressContext, type TaskExecutionContext } from '@/lib/workers/shared'
 import { createArtifact } from '@/lib/run-runtime/service'
 import { prisma } from '@/lib/prisma'
 import {
@@ -15,8 +15,6 @@ import {
   persistClips,
   resolveClipRecordId,
 } from './story-to-script-helpers'
-import type { TaskJobData } from '@/lib/task/types'
-import type { Job } from 'bullmq'
 
 type FlushableCallbacks = {
   flush: () => Promise<void>
@@ -80,7 +78,7 @@ async function createStoryToScriptArtifacts(params: {
 }
 
 export async function runStoryToScriptMainFlow(params: {
-  job: Job<TaskJobData>
+  context: TaskExecutionContext
   callbacks: FlushableCallbacks
   runId: string
   episodeId: string
@@ -142,7 +140,7 @@ export async function runStoryToScriptMainFlow(params: {
     )
   }
 
-  await reportTaskProgress(params.job, 80, {
+  await reportTaskProgressContext(params.context, 80, {
     stage: 'story_to_script_persist',
     stageLabel: 'progress.stage.storyToScriptPersist',
     displayMode: 'detail',
@@ -213,7 +211,7 @@ export async function runStoryToScriptMainFlow(params: {
     }
   })
 
-  await reportTaskProgress(params.job, 96, {
+  await reportTaskProgressContext(params.context, 96, {
     stage: 'story_to_script_persist_done',
     stageLabel: 'progress.stage.storyToScriptPersistDone',
     displayMode: 'detail',

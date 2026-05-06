@@ -4,6 +4,30 @@ import { onProjectNameAvailable } from '@/lib/logging/file-writer'
 import { prisma } from '@/lib/prisma'
 import type { TaskJobData } from '@/lib/task/types'
 
+export type TaskRetryState = Readonly<{
+  attemptsMade: number
+  maxAttempts: number
+  backoff?: number | { type?: string; delay?: number } | null
+}>
+
+export function buildRetryStateFromJob(job: Job<TaskJobData>): TaskRetryState {
+  return {
+    attemptsMade: resolveAttemptsMade(job),
+    maxAttempts: resolveQueueAttempts(job),
+    backoff: normalizeBackoff(job.opts?.backoff),
+  }
+}
+
+function normalizeBackoff(value: unknown): TaskRetryState['backoff'] {
+  if (typeof value === 'number') return value
+  if (!value || typeof value !== 'object') return null
+  const record = value as { type?: unknown; delay?: unknown }
+  return {
+    type: typeof record.type === 'string' ? record.type : undefined,
+    delay: typeof record.delay === 'number' ? record.delay : undefined,
+  }
+}
+
 function resolveQueueAttempts(job: Job<TaskJobData>): number {
   const attempts = job.opts?.attempts ?? 1
   const value = typeof attempts === 'number' && Number.isFinite(attempts) ? Math.floor(attempts) : 1
@@ -16,8 +40,8 @@ function resolveAttemptsMade(job: Job<TaskJobData>): number {
   return Math.max(0, value)
 }
 
-function resolveNextBackoffMs(job: Job<TaskJobData>, failedAttempt: number): number | null {
-  const backoff = job.opts?.backoff
+function resolveNextBackoffMs(retryState: TaskRetryState, failedAttempt: number): number | null {
+  const backoff = retryState.backoff
   if (typeof backoff === 'number' && Number.isFinite(backoff) && backoff > 0) {
     return Math.floor(backoff)
   }
@@ -38,7 +62,7 @@ function resolveNextBackoffMs(job: Job<TaskJobData>, failedAttempt: number): num
 }
 
 export function shouldRetryInQueue(params: {
-  job: Job<TaskJobData>
+  retryState: TaskRetryState
   normalizedError: NormalizedError
 }): {
   enabled: boolean
@@ -46,13 +70,13 @@ export function shouldRetryInQueue(params: {
   maxAttempts: number
   nextBackoffMs: number | null
 } {
-  const maxAttempts = resolveQueueAttempts(params.job)
-  const failedAttempt = resolveAttemptsMade(params.job) + 1
+  const maxAttempts = params.retryState.maxAttempts
+  const failedAttempt = params.retryState.attemptsMade + 1
   return {
     enabled: params.normalizedError.retryable && failedAttempt < maxAttempts,
     failedAttempt,
     maxAttempts,
-    nextBackoffMs: resolveNextBackoffMs(params.job, failedAttempt),
+    nextBackoffMs: resolveNextBackoffMs(params.retryState, failedAttempt),
   }
 }
 

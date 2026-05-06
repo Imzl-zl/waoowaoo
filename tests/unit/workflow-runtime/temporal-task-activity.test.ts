@@ -7,9 +7,9 @@ const activityInfoMock = vi.hoisted(() => vi.fn(() => ({
   attempt: 2,
 })))
 const getTaskByIdMock = vi.hoisted(() => vi.fn())
-const reportTaskProgressMock = vi.hoisted(() => vi.fn(async () => undefined))
-const withTaskLifecycleMock = vi.hoisted(() => vi.fn())
-const resolveTextTaskHandlerMock = vi.hoisted(() => vi.fn())
+const reportTaskProgressContextMock = vi.hoisted(() => vi.fn(async () => undefined))
+const withTaskLifecycleContextMock = vi.hoisted(() => vi.fn())
+const runTextTaskHandlerWithContextMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@temporalio/activity', () => ({
   activityInfo: activityInfoMock,
@@ -20,17 +20,17 @@ vi.mock('@/lib/task/service', () => ({
 }))
 
 vi.mock('@/lib/workers/shared', () => ({
-  reportTaskProgress: reportTaskProgressMock,
-  withTaskLifecycle: withTaskLifecycleMock,
+  reportTaskProgressContext: reportTaskProgressContextMock,
+  withTaskLifecycleContext: withTaskLifecycleContextMock,
 }))
 
 vi.mock('@/lib/workers/handlers/text-task-router', () => ({
-  resolveTextTaskHandler: resolveTextTaskHandlerMock,
+  runTextTaskHandlerWithContext: runTextTaskHandlerWithContextMock,
 }))
 
 import {
   buildTaskJobDataFromTask,
-  createTemporalTaskJob,
+  createTemporalTaskExecutionContext,
   taskActivities,
 } from '@/lib/workflow-runtime/temporal/run-task'
 
@@ -94,15 +94,16 @@ describe('Temporal run task Activity', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getTaskByIdMock.mockReset()
-    reportTaskProgressMock.mockReset()
-    withTaskLifecycleMock.mockReset()
-    resolveTextTaskHandlerMock.mockReset()
+    reportTaskProgressContextMock.mockReset()
+    withTaskLifecycleContextMock.mockReset()
+    runTextTaskHandlerWithContextMock.mockReset()
     getTaskByIdMock
       .mockResolvedValueOnce(buildTaskRow())
       .mockResolvedValue(buildTaskRow({ status: TASK_STATUS.COMPLETED }))
-    const handler = vi.fn(async () => ({ ok: true }))
-    resolveTextTaskHandlerMock.mockReturnValue(handler)
-    withTaskLifecycleMock.mockImplementation(async (job, handlerFn) => await handlerFn(job))
+    runTextTaskHandlerWithContextMock.mockResolvedValue({ ok: true })
+    withTaskLifecycleContextMock.mockImplementation(
+      async (context, handlerFn) => await handlerFn(context),
+    )
   })
 
   it('rebuilds TaskJobData from the persisted task row', () => {
@@ -123,16 +124,17 @@ describe('Temporal run task Activity', () => {
     })
   })
 
-  it('creates a BullMQ-compatible job shell with Temporal attempt state', () => {
-    const job = createTemporalTaskJob(buildTaskJobDataFromTask(workflow, buildTaskRow()), 3)
+  it('creates a task execution context with Temporal retry state', () => {
+    const context = createTemporalTaskExecutionContext(
+      buildTaskJobDataFromTask(workflow, buildTaskRow()),
+      3,
+    )
 
-    expect(job).toMatchObject({
-      id: 'task-1',
-      name: TASK_TYPE.STORY_TO_SCRIPT_RUN,
+    expect(context).toMatchObject({
       queueName: 'temporal:text',
-      attemptsMade: 2,
-      opts: {
-        attempts: 5,
+      retryState: {
+        attemptsMade: 2,
+        maxAttempts: 5,
         backoff: {
           type: 'exponential',
           delay: 2000,
@@ -145,18 +147,20 @@ describe('Temporal run task Activity', () => {
     const result = await taskActivities.executeRunCentricTask(workflow)
 
     expect(getTaskByIdMock).toHaveBeenCalledWith('task-1')
-    expect(resolveTextTaskHandlerMock).toHaveBeenCalledWith(TASK_TYPE.STORY_TO_SCRIPT_RUN)
-    expect(withTaskLifecycleMock).toHaveBeenCalledTimes(1)
-    const job = withTaskLifecycleMock.mock.calls[0]?.[0]
-    expect(job).toMatchObject({
+    expect(withTaskLifecycleContextMock).toHaveBeenCalledTimes(1)
+    const context = withTaskLifecycleContextMock.mock.calls[0]?.[0]
+    expect(context).toMatchObject({
       queueName: 'temporal:text',
-      attemptsMade: 1,
+      retryState: {
+        attemptsMade: 1,
+      },
       data: {
         taskId: 'task-1',
         type: TASK_TYPE.STORY_TO_SCRIPT_RUN,
       },
     })
-    expect(reportTaskProgressMock).toHaveBeenCalledWith(job, 5, { stage: 'received' })
+    expect(reportTaskProgressContextMock).toHaveBeenCalledWith(context, 5, { stage: 'received' })
+    expect(runTextTaskHandlerWithContextMock).toHaveBeenCalledWith(context)
     expect(result).toEqual({
       runId: 'run-1',
       workflowType: TASK_TYPE.STORY_TO_SCRIPT_RUN,
@@ -175,7 +179,7 @@ describe('Temporal run task Activity', () => {
       nonRetryable: true,
       type: 'TASK_TERMINAL_FAILURE',
     })
-    expect(withTaskLifecycleMock).not.toHaveBeenCalled()
+    expect(withTaskLifecycleContextMock).not.toHaveBeenCalled()
   })
 
   it('rejects workflow type mismatches as non-retryable Activity failures', async () => {
@@ -186,11 +190,11 @@ describe('Temporal run task Activity', () => {
       nonRetryable: true,
       type: 'TASK_TERMINAL_FAILURE',
     })
-    expect(withTaskLifecycleMock).not.toHaveBeenCalled()
+    expect(withTaskLifecycleContextMock).not.toHaveBeenCalled()
   })
 
   it('converts terminal worker lifecycle failures to non-retryable Activity failures', async () => {
-    withTaskLifecycleMock.mockRejectedValue(new UnrecoverableError('terminal failure'))
+    withTaskLifecycleContextMock.mockRejectedValue(new UnrecoverableError('terminal failure'))
 
     await expect(taskActivities.executeRunCentricTask(workflow)).rejects.toMatchObject({
       nonRetryable: true,

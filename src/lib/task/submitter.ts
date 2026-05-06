@@ -1,5 +1,4 @@
 import { createScopedLogger } from '@/lib/logging/core'
-import { addTaskJob } from './queues'
 import { publishTaskEvent } from './publisher'
 import {
   createTask,
@@ -11,6 +10,7 @@ import {
   updateTaskBillingInfo,
   updateTaskPayload,
 } from './service'
+import { launchTaskExecution } from './execution-launcher'
 import { TASK_EVENT_TYPE, TASK_STATUS, TASK_TYPE, type TaskBillingInfo, type TaskType } from './types'
 import {
   buildDefaultTaskBillingInfo,
@@ -309,30 +309,33 @@ export async function submitTask(params: {
 
   if (!deduped) {
     try {
-      await addTaskJob({
-        taskId: task.id,
-        type: params.type,
-        locale: params.locale,
-        projectId: params.projectId,
-        episodeId: params.episodeId || null,
-        targetType: params.targetType,
-        targetId: params.targetId,
-        payload: runId
-          ? {
-              ...normalizedPayload,
-              runId,
-              meta: {
-                ...toObject(normalizedPayload.meta),
+      await launchTaskExecution({
+        task: {
+          taskId: task.id,
+          type: params.type,
+          locale: params.locale,
+          projectId: params.projectId,
+          episodeId: params.episodeId || null,
+          targetType: params.targetType,
+          targetId: params.targetId,
+          payload: runId
+            ? {
+                ...normalizedPayload,
                 runId,
-              },
-            }
-          : normalizedPayload,
-        billingInfo: preparedBillingInfo || null,
-        userId: params.userId,
-        trace: {
-          requestId: params.requestId || null,
+                meta: {
+                  ...toObject(normalizedPayload.meta),
+                  runId,
+                },
+              }
+            : normalizedPayload,
+          billingInfo: preparedBillingInfo || null,
+          userId: params.userId,
+          trace: {
+            requestId: params.requestId || null,
+          },
         },
-      }, {
+        runId,
+        workflowType,
         priority: typeof task.priority === 'number' ? task.priority : 0,
       })
       await markTaskEnqueued(task.id)
@@ -349,7 +352,10 @@ export async function submitTask(params: {
         billingInfo: preparedBillingInfo,
       })
       const compensationFailed = rollbackResult.attempted && !rollbackResult.rolledBack
-      const failedCode = compensationFailed ? 'BILLING_COMPENSATION_FAILED' : 'ENQUEUE_FAILED'
+      const launchError = error instanceof ApiError ? error : null
+      const failedCode = compensationFailed
+        ? 'BILLING_COMPENSATION_FAILED'
+        : (launchError?.code || 'ENQUEUE_FAILED')
       const failedMessage = compensationFailed
         ? `${message || 'queue add failed'}; billing rollback failed`
         : (message || 'queue add failed')
@@ -376,7 +382,7 @@ export async function submitTask(params: {
         action: 'task.submit.enqueue_failed',
         message: failedMessage,
         taskId: task.id,
-        errorCode: compensationFailed ? 'INTERNAL_ERROR' : 'EXTERNAL_ERROR',
+        errorCode: compensationFailed ? 'INTERNAL_ERROR' : (launchError?.code || 'EXTERNAL_ERROR'),
         retryable: false,
         details: {
           compensationFailed,
@@ -392,7 +398,8 @@ export async function submitTask(params: {
                 message: String(error),
               },
       })
-      throw new ApiError(compensationFailed ? 'INTERNAL_ERROR' : 'EXTERNAL_ERROR', {
+      throw new ApiError(compensationFailed ? 'INTERNAL_ERROR' : (launchError?.code || 'EXTERNAL_ERROR'), {
+        ...(launchError?.details || {}),
         message: failedMessage,
         taskId: task.id,
       })

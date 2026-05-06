@@ -112,7 +112,17 @@ vi.mock('@/lib/constants', () => ({
 }))
 
 vi.mock('@/lib/workers/shared', () => ({
+  buildTaskExecutionContextFromJob: (job: Job<TaskJobData>) => ({
+    data: job.data,
+    queueName: job.queueName || 'text',
+    retryState: {
+      attemptsMade: 0,
+      maxAttempts: 1,
+      backoff: null,
+    },
+  }),
   reportTaskProgress: reportTaskProgressMock,
+  reportTaskProgressContext: reportTaskProgressMock,
 }))
 
 vi.mock('@/lib/workers/utils', () => ({
@@ -133,7 +143,15 @@ vi.mock('@/lib/novel-promotion/script-to-storyboard/orchestrator', () => ({
 }))
 vi.mock('@/lib/workers/handlers/llm-stream', () => ({
   createWorkerLLMStreamContext: vi.fn(() => ({ streamRunId: 'run-1', nextSeqByStepLane: {} })),
+  createWorkerLLMStreamContextForTask: vi.fn(() => ({ streamRunId: 'run-1', nextSeqByStepLane: {} })),
   createWorkerLLMStreamCallbacks: vi.fn(() => ({
+    onStage: vi.fn(),
+    onChunk: vi.fn(),
+    onComplete: vi.fn(),
+    onError: vi.fn(),
+    flush: vi.fn(async () => undefined),
+  })),
+  createWorkerLLMStreamCallbacksContext: vi.fn(() => ({
     onStage: vi.fn(),
     onChunk: vi.fn(),
     onComplete: vi.fn(),
@@ -361,7 +379,9 @@ describe('worker script-to-storyboard behavior', () => {
       streamStepAttempt: 2,
     }))
     expect(reportTaskProgressMock).toHaveBeenCalledWith(
-      job,
+      expect.objectContaining({
+        data: job.data,
+      }),
       84,
       expect.objectContaining({
         stage: 'script_to_storyboard_step',
