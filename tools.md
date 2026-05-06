@@ -35,10 +35,11 @@
 - run cancel 控制面协调入口：`src/lib/run-runtime/cancel.ts` 的 `requestManagedRunCancel`
 - Temporal lifecycle read-model 投影入口：`src/lib/workflow-runtime/temporal/read-model.ts` 的 `recordTemporalRunLifecycleEvent`
 - Temporal lifecycle Redis 发布入口：`src/lib/workflow-runtime/temporal/events.ts` 的 `publishTemporalRunLifecycleEvent`
-- Temporal failure lifecycle Activity 边界：`recordWorkflowStepFailed` 写 `step.error`，`recordWorkflowFailed` 写 `run.error`，当前仍未接业务链路。
+- Temporal failure lifecycle Activity 边界：`recordWorkflowStepFailed` 写 `step.error`，`recordWorkflowFailed` 写 `run.error`；`runTaskWorkflow` 已在 `executeRunCentricTask` 失败后投影这两个 lifecycle 事件并 rethrow 原错误。
 - Temporal step lifecycle Activity 已支持可选 `TemporalWorkflowStepDescriptor`；未传时默认 smoke step，后续业务 workflow 应显式传 `stepKey` / `stepTitle` / `stepIndex` / `stepTotal` / `attempt`。
 - Temporal smoke workflow 当前会按 `run.start -> step.start -> step.complete -> run.complete` 写低频 read model lifecycle；它仍只在显式 Temporal worker 路径中运行，不接管业务任务。
 - Temporal run-centric text task workflow：`runTaskWorkflow` -> `executeRunCentricTask`（`src/lib/workflow-runtime/temporal/run-task.ts`），当前只支持 `story_to_script_run` / `script_to_storyboard_run`，复用既有 text worker lifecycle。
+- Temporal run-task failure projection：workflow 层使用固定 `run_task.execute` step descriptor；投影失败不吞掉，按 Debug-First 显式暴露。
 - Worker task lifecycle context 入口：`src/lib/workers/shared.ts` 的 `TaskExecutionContext` / `withTaskLifecycleContext` / `reportTaskProgressContext`；BullMQ workers 仍用 `withTaskLifecycle(job, handler)` adapter。
 - Run-centric text handler context 入口：`handleStoryToScriptTaskContext` / `handleScriptToStoryboardTaskContext`；旧 `handleStoryToScriptTask(job)` / `handleScriptToStoryboardTask(job)` 只作为 BullMQ adapter。
 - 数据 / 配置 / 约束根目录：`prisma/`、`standards/`、`messages/`、`scripts/guards/`、`tests/contracts/`、`.codex-tasks/`

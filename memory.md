@@ -23,8 +23,8 @@
 - Temporal lifecycle publish boundary 已入仓：`publishTemporalRunLifecycleEvent` 复用同一幂等 `RunEventInput` 后调用 `publishRunEvent`，Temporal Activities 现在会把低频 run/step lifecycle 发布为 Redis `run.event`。
 - Temporal smoke workflow 已形成最小 run + step read-model 生命周期闭环：`run.start -> step.start -> step.complete -> run.complete`，返回的 `TemporalWorkflowRunResult` contract 保持不变。
 - Temporal step lifecycle 已具备通用 descriptor boundary：step Activities 可接受 `TemporalWorkflowStepDescriptor`，payload 会携带 `stepKey`、`stepTitle`、`stepIndex`、`stepTotal`、`stepAttempt`，未传时默认 smoke step。
-- Temporal failure lifecycle projection boundary 已入仓：`recordWorkflowStepFailed` / `recordWorkflowFailed` 可显式写入 `step.error` / `run.error`，payload contract 固定 `errorCode`、`message` / `errorMessage` 和可选 `retryable`，但尚未接入业务链路。
-- Temporal run-centric text task wrapper workflow 已入仓：`runTaskWorkflow` / `executeRunCentricTask` 支持 `story_to_script_run` 与 `script_to_storyboard_run`，通过 `TaskExecutionContext` 复用 worker lifecycle，并以持久化 `Task.status=completed` 作为 workflow 成功条件。
+- Temporal failure lifecycle projection boundary 已接入 run-task 业务链路：`recordWorkflowStepFailed` / `recordWorkflowFailed` 可显式写入 `step.error` / `run.error`，payload contract 固定 `errorCode`、`message` / `errorMessage` 和可选 `retryable`。
+- Temporal run-centric text task wrapper workflow 已入仓：`runTaskWorkflow` / `executeRunCentricTask` 支持 `story_to_script_run` 与 `script_to_storyboard_run`，通过 `TaskExecutionContext` 复用 worker lifecycle，以持久化 `Task.status=completed` 作为 workflow 成功条件，并在执行 Activity 失败后投影 `step.error` / `run.error` 后 rethrow 原错误。
 - Worker task lifecycle context boundary 已入仓：`src/lib/workers/shared.ts` 暴露 `TaskExecutionContext` / `withTaskLifecycleContext` / `reportTaskProgressContext`，BullMQ worker 入口继续通过 `withTaskLifecycle(job, handler)` adapter 兼容。
 - Run-centric text handler context boundary 已入仓：`story_to_script_run` / `script_to_storyboard_run` 已有 context-native handler；Temporal `runTextTaskHandlerWithContext` 直接 dispatch context handler，不再创建 fake legacy Job。
 - `GraphEvent` 已支持可选 `idempotencyKey` 唯一键；携带幂等键调用 `appendRunEventWithSeq` 时重复写入会返回已有事件，不重复追加。
@@ -34,7 +34,7 @@
 
 ## 进行中 / 未完成
 - `README.md` 明确项目仍处测试初期，功能和稳定性持续快速迭代中，版本升级时数据库兼容策略尚未稳定。
-- `docs/project-workflow-refactor-analysis.md` 记录长期方向：Temporal 做 durable workflow kernel、LangGraph 做可选 Agent 子引擎、未来 PG 替换 MySQL；当前已完成 Temporal 运行时、启动、metadata、lifecycle 投影与发布、run cancel API 接入、failure boundary、smoke run+step 生命周期闭环、run-centric text task wrapper、task execution launcher boundary、task lifecycle context boundary 和 run-centric text handler context boundary；`submitTask` 默认调度仍走 BullMQ。
+- `docs/project-workflow-refactor-analysis.md` 记录长期方向：Temporal 做 durable workflow kernel、LangGraph 做可选 Agent 子引擎、未来 PG 替换 MySQL；当前已完成 Temporal 运行时、启动、metadata、lifecycle 投影与发布、run cancel API 接入、failure boundary、smoke run+step 生命周期闭环、run-task failure projection、run-centric text task wrapper、task execution launcher boundary、task lifecycle context boundary 和 run-centric text handler context boundary；`submitTask` 默认调度仍走 BullMQ。
 - `.gitignore` 已收敛本地任务状态和生成物噪音：新 `.codex-tasks/`、`.tmp/`、测试/浏览器报告、本地 Temporalite/SQLite 数据、缓存和 env 变体默认忽略；正式源码、测试、migrations、`docs/`、`AGENTS.md` 不忽略。
 - 仓库尚无独立 `docs/specs` 文档体系；当前真值仍集中在代码、README、standards、guards 和 `tests/contracts/`。
 - 当前 `.codex-tasks/20260410-project-optimization-epic/` 已收尾，仓库里未发现处于打开状态的已跟踪开发子任务。
@@ -71,6 +71,7 @@
 - 2026-05-06：完成 `20260506-task-launcher-boundary`，新增 `src/lib/task/execution-launcher.ts`，`submitTask` 改为通过 launcher 启动执行；默认 BullMQ 不变，显式 `TASK_EXECUTION_RUNTIME=temporal_run_task` 可启动已支持的 run-centric text workflow。`execution-launcher` / `submitter-launcher` 单测、DB-backed submitter 回归、`typecheck`、`check:file-line-count`、`test:guards` 通过。
 - 2026-05-06：完成 `20260506-temporal-task-context`，新增 `TaskExecutionContext` lifecycle boundary；Temporal run-task Activity 不再 import BullMQ `Job` 或创建 `createTemporalTaskJob`，BullMQ workers 仍通过 adapter 兼容。Temporal activity、worker shared、launcher / submitter 单测、`typecheck`、`check:file-line-count`、`test:guards` 通过。
 - 2026-05-06：完成 `20260506-run-text-handler-context`，`story_to_script_run` / `script_to_storyboard_run` 迁到 context-native handler，`llm-stream` 和 progress / stream helper 提供 context 入口，BullMQ handler 保持 adapter。相关 worker / Temporal / launcher 单测、`typecheck`、`check:file-line-count`、`test:guards` 通过。
+- 2026-05-06：完成 `20260506-run-task-failure-projection`，`runTaskWorkflow` 在 `executeRunCentricTask` 失败后投影固定 `run_task.execute` 的 `step.error` 与 `run.error`，再 rethrow 原业务错误；workflow 单测、相关 Temporal / worker / launcher 单测、`typecheck`、`check:file-line-count`、`test:guards` 通过。
 - 2026-05-03：完成 `20260502-temporal-run-task-workflow`，新增 `runTaskWorkflow` / `executeRunCentricTask`，Temporal worker 现在可执行真实 run-centric text task wrapper；默认 `submitTask` 仍未切流。定向 Temporal 测试、`typecheck`、`check:file-line-count`、`check:changed-test-impact`、`test:guards` 和 Temporal 全量单测通过。
 - 2026-05-02：完成 `20260502-temporal-run-cancel-api`，`/api/runs/[runId]/cancel` 改为薄 route + `requestManagedRunCancel` 协调器；Temporal-backed run 调用 `cancelTemporalWorkflowRun`，legacy linked task 仍调用 `cancelTask`，`run.canceled` 使用幂等键；定向测试、`typecheck`、`check:file-line-count`、`test:guards` 通过。
 - 2026-05-02：完成 `20260502-temporal-step-descriptor-gitignore`，`.gitignore` 忽略本地 task state / 临时产物 / 测试报告 / 本地 Temporalite 数据等噪音；新增 `TemporalWorkflowStepDescriptor`，step payload builders 和 Activities 支持通用 step descriptor；Temporal 定向单测、`typecheck`、`check:file-line-count` 通过。

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildTemporalWorkflowCompletionPayload,
   buildTemporalWorkflowFailurePayload,
@@ -7,7 +7,57 @@ import {
   buildTemporalWorkflowStepFailurePayload,
   buildTemporalWorkflowStepStartedPayload,
 } from '@/lib/workflow-runtime/temporal/contract'
-import { TEMPORAL_SMOKE_STEP, TEMPORAL_WORKFLOW_TYPE } from '@/lib/workflow-runtime/temporal/types'
+import { runTaskWorkflow } from '@/lib/workflow-runtime/temporal/workflows'
+import {
+  TEMPORAL_SMOKE_STEP,
+  TEMPORAL_WORKFLOW_TYPE,
+  type TemporalTaskWorkflowResult,
+  type TemporalWorkflowRunInput,
+} from '@/lib/workflow-runtime/temporal/types'
+
+const temporalActivitiesMock = vi.hoisted(() => ({
+  recordWorkflowStarted: vi.fn(),
+  recordWorkflowStepStarted: vi.fn(),
+  recordWorkflowStepCompleted: vi.fn(),
+  recordWorkflowCompleted: vi.fn(),
+  executeRunCentricTask: vi.fn(),
+  recordWorkflowStepFailed: vi.fn(),
+  recordWorkflowFailed: vi.fn(),
+}))
+
+vi.mock('@temporalio/workflow', () => ({
+  proxyActivities: vi.fn(() => temporalActivitiesMock),
+}))
+
+beforeEach(() => {
+  temporalActivitiesMock.recordWorkflowStarted.mockReset()
+  temporalActivitiesMock.recordWorkflowStepStarted.mockReset()
+  temporalActivitiesMock.recordWorkflowStepCompleted.mockReset()
+  temporalActivitiesMock.recordWorkflowCompleted.mockReset()
+  temporalActivitiesMock.executeRunCentricTask.mockReset()
+  temporalActivitiesMock.recordWorkflowStepFailed.mockReset()
+  temporalActivitiesMock.recordWorkflowFailed.mockReset()
+})
+
+function buildRunTaskWorkflowInput(): TemporalWorkflowRunInput {
+  return {
+    runId: 'run-1',
+    workflowType: 'story_to_script_run',
+    projectId: 'project-1',
+    userId: 'user-1',
+    taskId: 'task-1',
+    targetType: 'task',
+    targetId: 'task-1',
+  }
+}
+
+const RUN_TASK_FAILURE_STEP = {
+  stepKey: 'run_task.execute',
+  stepTitle: 'Run task execution',
+  stepIndex: 1,
+  stepTotal: 1,
+  attempt: 1,
+}
 
 describe('buildTemporalWorkflowRunResult', () => {
   it('exposes the real run task workflow type', () => {
@@ -189,5 +239,46 @@ describe('buildTemporalWorkflowRunResult', () => {
         attempt: 1,
       },
     })).toThrow('stepTotal must be greater than or equal to stepIndex')
+  })
+})
+
+describe('runTaskWorkflow', () => {
+  it('returns the run-centric task result without writing failure lifecycle on success', async () => {
+    const input = buildRunTaskWorkflowInput()
+    const result: TemporalTaskWorkflowResult = {
+      runId: input.runId,
+      workflowType: input.workflowType,
+      taskId: 'task-1',
+      taskType: 'story_to_script_run',
+      status: 'completed',
+      activityId: 'activity-1',
+    }
+    temporalActivitiesMock.executeRunCentricTask.mockResolvedValue(result)
+
+    await expect(runTaskWorkflow(input)).resolves.toBe(result)
+
+    expect(temporalActivitiesMock.executeRunCentricTask).toHaveBeenCalledWith(input)
+    expect(temporalActivitiesMock.recordWorkflowStepFailed).not.toHaveBeenCalled()
+    expect(temporalActivitiesMock.recordWorkflowFailed).not.toHaveBeenCalled()
+  })
+
+  it('records step and run failure lifecycle before rethrowing the original task error', async () => {
+    const input = buildRunTaskWorkflowInput()
+    const error = new Error('activity failed')
+    const failure = {
+      errorCode: 'Error',
+      message: 'activity failed',
+      retryable: true,
+    }
+    temporalActivitiesMock.executeRunCentricTask.mockRejectedValue(error)
+
+    await expect(runTaskWorkflow(input)).rejects.toBe(error)
+
+    expect(temporalActivitiesMock.recordWorkflowStepFailed).toHaveBeenCalledWith(
+      input,
+      failure,
+      RUN_TASK_FAILURE_STEP,
+    )
+    expect(temporalActivitiesMock.recordWorkflowFailed).toHaveBeenCalledWith(input, failure)
   })
 })
