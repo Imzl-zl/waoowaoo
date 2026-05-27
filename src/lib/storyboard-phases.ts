@@ -93,11 +93,19 @@ export async function executePhase1(
     planPrompt = planPrompt.replace('{clip_content}', clip.content || '')
   }
 
-  logAIAnalysis(session.user.id, session.user.name, projectId, projectName, {
-    action: 'STORYBOARD_PHASE1_PROMPT',
-    input: { 片段标识: clipId, 完整提示词: planPrompt },
-    model: novelPromotionData.analysisModel,
-  })
+  logAIAnalysis(
+    'STORYBOARD_PHASE1_PROMPT',
+    'STORYBOARD_PHASE1_PROMPT',
+    {
+      action: 'STORYBOARD_PHASE1_PROMPT',
+      input: { 片段标识: clipId, 完整提示词: planPrompt },
+      model: novelPromotionData.analysisModel,
+    },
+    session.user.id,
+    session.user.name,
+    projectId,
+    projectName,
+  )
 
   const planPanels = await executeStoryboardArrayPhase<StoryboardPanel>({
     phaseLabel: 'Phase 1',
@@ -125,15 +133,23 @@ export async function executePhase1(
     },
   })
 
-  logAIAnalysis(session.user.id, session.user.name, projectId, projectName, {
-    action: 'STORYBOARD_PHASE1_OUTPUT',
-    output: {
-      片段标识: clipId,
-      总分镜数: planPanels.length,
-      第一阶段完整结果: planPanels,
+  logAIAnalysis(
+    'STORYBOARD_PHASE1_OUTPUT',
+    'STORYBOARD_PHASE1_OUTPUT',
+    {
+      action: 'STORYBOARD_PHASE1_OUTPUT',
+      output: {
+        片段标识: clipId,
+        总分镜数: planPanels.length,
+        第一阶段完整结果: planPanels,
+      },
+      model: novelPromotionData.analysisModel,
     },
-    model: novelPromotionData.analysisModel,
-  })
+    session.user.id,
+    session.user.name,
+    projectId,
+    projectName,
+  )
   _ulogInfo(`[Phase 1] Clip ${clipId}: 生成 ${planPanels.length} 个基础分镜`)
 
   return { clipId, planPanels }
@@ -185,16 +201,24 @@ export async function executePhase2(
   })
 
   _ulogInfo(`[Phase 2] Clip ${clipId}: 成功生成 ${photographyRules.length} 个镜头的摄影规则`)
-  logAIAnalysis(session.user.id, session.user.name, projectId, projectName, {
-    action: 'CINEMATOGRAPHER_PLAN',
-    output: {
-      片段标识: clipId,
-      镜头数量: planPanels.length,
-      摄影规则数量: photographyRules.length,
-      摄影规则: photographyRules,
+  logAIAnalysis(
+    'CINEMATOGRAPHER_PLAN',
+    'CINEMATOGRAPHER_PLAN',
+    {
+      action: 'CINEMATOGRAPHER_PLAN',
+      output: {
+        片段标识: clipId,
+        镜头数量: planPanels.length,
+        摄影规则数量: photographyRules.length,
+        摄影规则: photographyRules,
+      },
+      model: novelPromotionData.analysisModel,
     },
-    model: novelPromotionData.analysisModel,
-  })
+    session.user.id,
+    session.user.name,
+    projectId,
+    projectName,
+  )
 
   return { clipId, planPanels, photographyRules }
 }
@@ -246,16 +270,24 @@ export async function executePhase2Acting(
   })
 
   _ulogInfo(`[Phase 2-Acting] Clip ${clipId}: 成功生成 ${actingDirections.length} 个镜头的演技指导`)
-  logAIAnalysis(session.user.id, session.user.name, projectId, projectName, {
-    action: 'ACTING_DIRECTION_PLAN',
-    output: {
-      片段标识: clipId,
-      镜头数量: planPanels.length,
-      演技指导数量: actingDirections.length,
-      演技指导: actingDirections,
+  logAIAnalysis(
+    'ACTING_DIRECTION_PLAN',
+    'ACTING_DIRECTION_PLAN',
+    {
+      action: 'ACTING_DIRECTION_PLAN',
+      output: {
+        片段标识: clipId,
+        镜头数量: planPanels.length,
+        演技指导数量: actingDirections.length,
+        演技指导: actingDirections,
+      },
+      model: novelPromotionData.analysisModel,
     },
-    model: novelPromotionData.analysisModel,
-  })
+    session.user.id,
+    session.user.name,
+    projectId,
+    projectName,
+  )
 
   return { clipId, planPanels, actingDirections }
 }
@@ -292,11 +324,19 @@ export async function executePhase3(
     .replace('{locations_description}', assetPromptData.filteredLocationsDescription)
     .replace('{props_description}', assetPromptData.filteredPropsDescription)
 
-  logAIAnalysis(session.user.id, session.user.name, projectId, projectName, {
-    action: 'STORYBOARD_PHASE3_PROMPT',
-    input: { 片段标识: clipId, 完整提示词: detailPrompt },
-    model: novelPromotionData.analysisModel,
-  })
+  logAIAnalysis(
+    'STORYBOARD_PHASE3_PROMPT',
+    'STORYBOARD_PHASE3_PROMPT',
+    {
+      action: 'STORYBOARD_PHASE3_PROMPT',
+      input: { 片段标识: clipId, 完整提示词: detailPrompt },
+      model: novelPromotionData.analysisModel,
+    },
+    session.user.id,
+    session.user.name,
+    projectId,
+    projectName,
+  )
 
   void photographyRules
   const finalPanels = await executeStoryboardArrayPhase<StoryboardPanel>({
@@ -310,15 +350,23 @@ export async function executePhase3(
     action: 'storyboard_phase3_detail',
     stepTitle: '镜头细化',
     afterParse: (panels) => {
-      logAIAnalysis(session.user.id, session.user.name, projectId, projectName, {
-        action: 'STORYBOARD_PHASE3_OUTPUT',
-        output: {
-          片段标识: clipId,
-          总分镜数: panels.length,
-          第三阶段完整结果_过滤前: panels,
+      logAIAnalysis(
+        'STORYBOARD_PHASE3_OUTPUT',
+        'STORYBOARD_PHASE3_OUTPUT',
+        {
+          action: 'STORYBOARD_PHASE3_OUTPUT',
+          output: {
+            片段标识: clipId,
+            总分镜数: panels.length,
+            第三阶段完整结果_过滤前: panels,
+          },
+          model: novelPromotionData.analysisModel,
         },
-        model: novelPromotionData.analysisModel,
-      })
+        session.user.id,
+        session.user.name,
+        projectId,
+        projectName,
+      )
 
       const filteredPanels = panels.filter((panel) =>
         panel.description && panel.description !== '无' && panel.location !== '无',
@@ -328,16 +376,24 @@ export async function executePhase3(
         throw new Error(`Phase 3: 过滤后无有效分镜 clip ${clipId}`)
       }
 
-      logAIAnalysis(session.user.id, session.user.name, projectId, projectName, {
-        action: 'STORYBOARD_FINAL_OUTPUT',
-        output: {
-          片段标识: clipId,
-          过滤前总数: panels.length,
-          过滤后有效数: filteredPanels.length,
-          最终有效分镜: filteredPanels,
+      logAIAnalysis(
+        'STORYBOARD_FINAL_OUTPUT',
+        'STORYBOARD_FINAL_OUTPUT',
+        {
+          action: 'STORYBOARD_FINAL_OUTPUT',
+          output: {
+            片段标识: clipId,
+            过滤前总数: panels.length,
+            过滤后有效数: filteredPanels.length,
+            最终有效分镜: filteredPanels,
+          },
+          model: novelPromotionData.analysisModel,
         },
-        model: novelPromotionData.analysisModel,
-      })
+        session.user.id,
+        session.user.name,
+        projectId,
+        projectName,
+      )
       return filteredPanels
     },
   })

@@ -144,7 +144,7 @@ export function useRunStreamState<TParams extends Record<string, unknown>>(
       try {
         const requestBody = buildRequestBody(params)
         return await executeRunRequest({
-          endpointUrl: endpoint(projectId),
+          endpointUrl: endpoint(projectId, params),
           requestBody,
           controller,
           taskStreamTimeoutMs: TASK_STREAM_TIMEOUT_MS,

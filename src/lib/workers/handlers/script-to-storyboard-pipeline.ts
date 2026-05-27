@@ -99,15 +99,23 @@ export async function runStoryboardOrchestratorFlow(params: {
             })
           } catch (error) {
             if (error instanceof JsonParseError) {
-              logAIAnalysis(params.context.data.userId, 'worker', params.projectId, params.projectName, {
-                action: 'SCRIPT_TO_STORYBOARD_PARSE_ERROR',
-                error: {
-                  message: error.message,
-                  rawTextPreview: error.rawText.slice(0, 3000),
-                  rawTextLength: error.rawText.length,
+              logAIAnalysis(
+                'SCRIPT_TO_STORYBOARD_PARSE_ERROR',
+                'SCRIPT_TO_STORYBOARD_PARSE_ERROR',
+                {
+                  action: 'SCRIPT_TO_STORYBOARD_PARSE_ERROR',
+                  error: {
+                    message: error.message,
+                    rawTextPreview: error.rawText.slice(0, 3000),
+                    rawTextLength: error.rawText.length,
+                  },
+                  model: params.model,
                 },
-                model: params.model,
-              })
+                params.context.data.userId,
+                'worker',
+                params.projectId,
+                params.projectName,
+              )
             }
             throw error
           }

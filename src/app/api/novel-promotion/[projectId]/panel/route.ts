@@ -211,9 +211,6 @@ export const DELETE = apiHandler(async (
 /**
  * PATCH /api/novel-promotion/[projectId]/panel
  * 更新单个 Panel 的属性（视频提示词等）
- * 支持两种更新方式：
- * 1. 通过 panelId 直接更新（推荐，用于清除错误等操作）
- * 2. 通过 storyboardId + panelIndex 更新（兼容旧接口）
  */
 export const PATCH = apiHandler(async (
   request: NextRequest,
@@ -226,52 +223,12 @@ export const PATCH = apiHandler(async (
   if (isErrorResponse(authResult)) return authResult
 
   const body = await request.json()
-  const panelModel = prisma.novelPromotionPanel as unknown as {
-    create: (args: { data: Record<string, unknown> }) => Promise<unknown>
-  }
-  const { panelId, storyboardId, panelIndex, videoPrompt, firstLastFramePrompt } = body
+  const { panelId, videoPrompt, firstLastFramePrompt } = body
 
-  // 🔥 方式1：通过 panelId 直接更新（优先）
-  if (panelId) {
-    const panel = await prisma.novelPromotionPanel.findUnique({
-      where: { id: panelId }
-    })
-
-    if (!panel) {
-      throw new ApiError('NOT_FOUND')
-    }
-
-    // 构建更新数据
-    const updateData: {
-      videoPrompt?: string | null
-      firstLastFramePrompt?: string | null
-    } = {}
-    if (videoPrompt !== undefined) updateData.videoPrompt = videoPrompt
-    if (firstLastFramePrompt !== undefined) updateData.firstLastFramePrompt = firstLastFramePrompt
-
-    await prisma.novelPromotionPanel.update({
-      where: { id: panelId },
-      data: updateData
-    })
-
-    return NextResponse.json({ success: true })
-  }
-
-  // 🔥 方式2：通过 storyboardId + panelIndex 更新（兼容旧接口）
-  if (!storyboardId || panelIndex === undefined) {
+  if (typeof panelId !== 'string' || !panelId.trim()) {
     throw new ApiError('INVALID_PARAMS')
   }
 
-  // 验证 storyboard 存在
-  const storyboard = await prisma.novelPromotionStoryboard.findUnique({
-    where: { id: storyboardId }
-  })
-
-  if (!storyboard) {
-    throw new ApiError('NOT_FOUND')
-  }
-
-  // 构建更新数据
   const updateData: {
     videoPrompt?: string | null
     firstLastFramePrompt?: string | null
@@ -283,29 +240,36 @@ export const PATCH = apiHandler(async (
     updateData.firstLastFramePrompt = firstLastFramePrompt
   }
 
-  // 尝试更新 Panel
-  const updatedPanel = await prisma.novelPromotionPanel.updateMany({
-    where: {
-      storyboardId,
-      panelIndex
+  if (Object.keys(updateData).length === 0) {
+    throw new ApiError('INVALID_PARAMS')
+  }
+
+  const panel = await prisma.novelPromotionPanel.findUnique({
+    where: { id: panelId },
+    select: {
+      id: true,
+      storyboard: {
+        select: {
+          episode: {
+            select: {
+              novelPromotionProject: {
+                select: { projectId: true },
+              },
+            },
+          },
+        },
+      },
     },
-    data: updateData
   })
 
-  // 如果 Panel 不存在，创建它（Panel 表是唯一数据源）
-  if (updatedPanel.count === 0) {
-    // 创建新的 Panel 记录
-    await panelModel.create({
-      data: {
-        storyboardId,
-        panelIndex,
-        panelNumber: panelIndex + 1,
-        imageUrl: null,
-        videoPrompt: videoPrompt ?? null,
-        firstLastFramePrompt: firstLastFramePrompt ?? null,
-      }
-    })
+  if (!panel || panel.storyboard.episode.novelPromotionProject.projectId !== projectId) {
+    throw new ApiError('NOT_FOUND')
   }
+
+  await prisma.novelPromotionPanel.update({
+    where: { id: panelId },
+    data: updateData
+  })
 
   return NextResponse.json({ success: true })
 })

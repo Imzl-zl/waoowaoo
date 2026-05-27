@@ -6,6 +6,10 @@ import {
   TASK_EXECUTION_RUNTIME,
 } from '@/lib/task/execution-launcher'
 import { TASK_TYPE, type TaskJobData } from '@/lib/task/types'
+import {
+  isTemporalRunTaskType,
+  TEMPORAL_RUN_TASK_TYPES,
+} from '@/lib/workflow-runtime/temporal/run-task-contract'
 import { TEMPORAL_WORKFLOW_TYPE } from '@/lib/workflow-runtime/temporal/types'
 
 function buildTask(overrides: Partial<TaskJobData> = {}): TaskJobData {
@@ -30,6 +34,15 @@ function buildTask(overrides: Partial<TaskJobData> = {}): TaskJobData {
 }
 
 describe('task execution launcher', () => {
+  it('uses the shared Temporal run-task support registry', () => {
+    expect(TEMPORAL_RUN_TASK_TYPES).toEqual([
+      TASK_TYPE.STORY_TO_SCRIPT_RUN,
+      TASK_TYPE.SCRIPT_TO_STORYBOARD_RUN,
+    ])
+    expect(isTemporalRunTaskType(TASK_TYPE.STORY_TO_SCRIPT_RUN)).toBe(true)
+    expect(isTemporalRunTaskType(TASK_TYPE.VOICE_LINE)).toBe(false)
+  })
+
   it('uses BullMQ by default', async () => {
     const addJob = vi.fn(async () => ({ id: 'job-1' }))
 

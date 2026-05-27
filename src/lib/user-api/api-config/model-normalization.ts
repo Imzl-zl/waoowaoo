@@ -279,10 +279,10 @@ function normalizeCustomPricing(
     return undefined
   }
   if (options?.strict) {
-    validateAllowedObjectKeys(raw, ['llm', 'image', 'video', 'input', 'output'], options.field || 'models.customPricing')
+    validateAllowedObjectKeys(raw, ['llm', 'image', 'video'], options.field || 'models.customPricing')
   }
 
-  const llmRaw = isRecord(raw.llm) ? raw.llm : raw
+  const llmRaw = isRecord(raw.llm) ? raw.llm : {}
   if (options?.strict && raw.llm !== undefined && !isRecord(raw.llm)) {
     throw new ApiError('INVALID_PARAMS', {
       code: 'MODEL_CUSTOM_PRICING_INVALID',
@@ -298,18 +298,10 @@ function normalizeCustomPricing(
   const outputPerMillion = options?.strict
     ? parseNonNegativeNumberStrict(llmRaw.outputPerMillion, options.field ? `${options.field}.llm.outputPerMillion` : 'models.customPricing.llm.outputPerMillion')
     : readNonNegativeNumber(llmRaw.outputPerMillion)
-  const legacyInput = options?.strict
-    ? parseNonNegativeNumberStrict((raw as Record<string, unknown>).input, options.field ? `${options.field}.input` : 'models.customPricing.input')
-    : readNonNegativeNumber((raw as Record<string, unknown>).input)
-  const legacyOutput = options?.strict
-    ? parseNonNegativeNumberStrict((raw as Record<string, unknown>).output, options.field ? `${options.field}.output` : 'models.customPricing.output')
-    : readNonNegativeNumber((raw as Record<string, unknown>).output)
-  const llm = (inputPerMillion !== undefined || outputPerMillion !== undefined || legacyInput !== undefined || legacyOutput !== undefined)
+  const llm = (inputPerMillion !== undefined || outputPerMillion !== undefined)
     ? {
       ...(inputPerMillion !== undefined ? { inputPerMillion } : {}),
       ...(outputPerMillion !== undefined ? { outputPerMillion } : {}),
-      ...(inputPerMillion === undefined && legacyInput !== undefined ? { inputPerMillion: legacyInput } : {}),
-      ...(outputPerMillion === undefined && legacyOutput !== undefined ? { outputPerMillion: legacyOutput } : {}),
     }
     : undefined
   if (

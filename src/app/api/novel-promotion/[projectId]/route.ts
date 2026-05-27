@@ -334,11 +334,12 @@ export const PATCH = apiHandler(async (
 
   logProjectAction(
     'UPDATE_NOVEL_PROMOTION',
+    'UPDATE_NOVEL_PROMOTION',
+    JSON.stringify({ changes: body }),
     session.user.id,
     session.user.name,
     projectId,
     project.name,
-    JSON.stringify({ changes: body }),
   )
 
   return NextResponse.json({ project: fullProject })

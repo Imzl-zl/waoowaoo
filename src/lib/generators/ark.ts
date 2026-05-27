@@ -555,10 +555,3 @@ export class ArkVideoGenerator extends BaseVideoGenerator {
         }
     }
 }
-
-// ============================================================
-// 向后兼容别名
-// ============================================================
-
-export const ArkSeedreamGenerator = ArkImageGenerator
-export const ArkSeedanceVideoGenerator = ArkVideoGenerator

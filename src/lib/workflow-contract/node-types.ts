@@ -1,0 +1,17 @@
+export const WORKFLOW_NODE_TYPES = {
+  MANUAL_TRIGGER: 'trigger.manual',
+  USER_INPUT: 'input.user',
+  LLM_ANALYSIS: 'llm.analysis',
+  LLM_TRANSFORM: 'llm.transform',
+  STORY_EXTRACT_BIBLE: 'story.extractBible',
+  STORY_PLAN_EPISODES: 'story.planEpisodes',
+  SCENE_BREAKDOWN: 'scene.breakdown',
+  SHOT_PLAN: 'shot.plan',
+  HUMAN_REVIEW: 'human.review',
+  LOGIC_MERGE: 'logic.merge',
+  RUNTIME_SMOKE: 'runtime.smoke',
+  DATA_TRANSFORM: 'data.transform',
+  MEDIA_GENERATE: 'media.generate',
+  ARTIFACT_PERSIST: 'artifact.persist',
+  OUTPUT_RESULT: 'output.result',
+} as const

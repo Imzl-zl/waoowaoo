@@ -63,8 +63,7 @@ interface VideoRenderPanelProps {
   getLocalPrompt: (panelKey: string, externalPrompt?: string, field?: PromptField) => string
   updateLocalPrompt: (panelKey: string, value: string, field?: PromptField) => void
   savePrompt: (
-    storyboardId: string,
-    panelIndex: number,
+    panelId: string | undefined,
     panelKey: string,
     value: string,
     field?: PromptField,
@@ -178,7 +177,7 @@ export default function VideoRenderPanel({
                   updateLocalPrompt(panelKey, value, promptField)
                   if (isLinked) onFlCustomPromptChange(panelKey, value)
                 }}
-                onSavePrompt={(value) => savePrompt(panel.storyboardId, panel.panelIndex, panelKey, value, promptField)}
+                onSavePrompt={(value) => savePrompt(panel.panelId, panelKey, value, promptField)}
                 onGenerateVideo={onGenerateVideo}
                 onUpdatePanelVideoModel={onUpdatePanelVideoModel}
                 onToggleLink={onToggleLink}

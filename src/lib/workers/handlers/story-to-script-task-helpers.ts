@@ -99,11 +99,19 @@ export function createStoryToScriptRunStep(params: {
       blockedBy: Array.isArray(meta.blockedBy) ? meta.blockedBy : [],
     })
 
-    logAIAnalysis(params.context.data.userId, 'worker', params.projectId, params.projectName, {
-      action: `STORY_TO_SCRIPT_PROMPT:${action}`,
-      input: { stepId: meta.stepId, stepTitle: meta.stepTitle, prompt },
-      model: params.model,
-    })
+    logAIAnalysis(
+      `STORY_TO_SCRIPT_PROMPT:${action}`,
+      `STORY_TO_SCRIPT_PROMPT:${action}`,
+      {
+        action: `STORY_TO_SCRIPT_PROMPT:${action}`,
+        input: { stepId: meta.stepId, stepTitle: meta.stepTitle, prompt },
+        model: params.model,
+      },
+      params.context.data.userId,
+      'worker',
+      params.projectId,
+      params.projectName,
+    )
 
     const output = await executeAiTextStep({
       userId: params.context.data.userId,
@@ -121,17 +129,25 @@ export function createStoryToScriptRunStep(params: {
     })
     await params.callbacks.flush()
 
-    logAIAnalysis(params.context.data.userId, 'worker', params.projectId, params.projectName, {
-      action: `STORY_TO_SCRIPT_OUTPUT:${action}`,
-      output: {
-        stepId: meta.stepId,
-        stepTitle: meta.stepTitle,
-        rawText: output.text,
-        textLength: output.text.length,
-        reasoningLength: output.reasoning.length,
+    logAIAnalysis(
+      `STORY_TO_SCRIPT_OUTPUT:${action}`,
+      `STORY_TO_SCRIPT_OUTPUT:${action}`,
+      {
+        action: `STORY_TO_SCRIPT_OUTPUT:${action}`,
+        output: {
+          stepId: meta.stepId,
+          stepTitle: meta.stepTitle,
+          rawText: output.text,
+          textLength: output.text.length,
+          reasoningLength: output.reasoning.length,
+        },
+        model: params.model,
       },
-      model: params.model,
-    })
+      params.context.data.userId,
+      'worker',
+      params.projectId,
+      params.projectName,
+    )
 
     return {
       text: output.text,

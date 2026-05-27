@@ -1,23 +1,12 @@
 import { TASK_TYPE } from '@/lib/task/types'
-
-export type WorkflowFailureMode = 'fail_run'
-
-export type WorkflowStepDefinition = {
-  key: string
-  dependsOn: string[]
-  retryable: boolean
-  artifactTypes: string[]
-  failureMode: WorkflowFailureMode
-}
-
-export type WorkflowDefinition = {
-  workflowType: string
-  orderedSteps: WorkflowStepDefinition[]
-  resolveRetryInvalidationStepKeys: (params: {
-    stepKey: string
-    existingStepKeys: string[]
-  }) => string[]
-}
+import { BUILTIN_WORKFLOW_CANVAS_DEFINITIONS } from './builtin-definitions'
+import { compileWorkflowCanvasDefinition } from './canvas-compiler'
+import type { WorkflowDefinition } from './canvas-types'
+export type {
+  WorkflowDefinition,
+  WorkflowFailureMode,
+  WorkflowStepDefinition,
+} from './canvas-types'
 
 function uniqueStepKeys(stepKeys: Iterable<string>): string[] {
   return Array.from(new Set(Array.from(stepKeys).filter((stepKey) => stepKey.trim().length > 0)))
@@ -95,104 +84,36 @@ function resolveScriptToStoryboardInvalidation(params: {
   return uniqueStepKeys(Array.from(affected).filter((stepKey) => params.existingStepKeys.has(stepKey)))
 }
 
-const STORY_TO_SCRIPT_DEFINITION: WorkflowDefinition = {
-  workflowType: TASK_TYPE.STORY_TO_SCRIPT_RUN,
-  orderedSteps: [
-    {
-      key: 'analyze_characters',
-      dependsOn: [],
-      retryable: true,
-      artifactTypes: ['analysis.characters'],
-      failureMode: 'fail_run',
-    },
-    {
-      key: 'analyze_locations',
-      dependsOn: [],
-      retryable: true,
-      artifactTypes: ['analysis.locations'],
-      failureMode: 'fail_run',
-    },
-    {
-      key: 'analyze_props',
-      dependsOn: [],
-      retryable: true,
-      artifactTypes: ['analysis.props'],
-      failureMode: 'fail_run',
-    },
-    {
-      key: 'split_clips',
-      dependsOn: ['analyze_characters', 'analyze_locations', 'analyze_props'],
-      retryable: true,
-      artifactTypes: ['clips.split'],
-      failureMode: 'fail_run',
-    },
-    {
-      key: 'screenplay_convert',
-      dependsOn: ['split_clips'],
-      retryable: true,
-      artifactTypes: ['screenplay.clip'],
-      failureMode: 'fail_run',
-    },
-    {
-      key: 'persist_script_artifacts',
-      dependsOn: ['screenplay_convert'],
-      retryable: false,
-      artifactTypes: [],
-      failureMode: 'fail_run',
-    },
-  ],
-  resolveRetryInvalidationStepKeys: ({ stepKey, existingStepKeys }) => resolveStoryToScriptInvalidation({
+const STORY_TO_SCRIPT_RETRY_INVALIDATION: WorkflowDefinition['resolveRetryInvalidationStepKeys'] = ({
+  stepKey,
+  existingStepKeys,
+}) => resolveStoryToScriptInvalidation({
     stepKey,
     existingStepKeys: new Set(existingStepKeys),
-  }),
-}
+  })
 
-const SCRIPT_TO_STORYBOARD_DEFINITION: WorkflowDefinition = {
-  workflowType: TASK_TYPE.SCRIPT_TO_STORYBOARD_RUN,
-  orderedSteps: [
-    {
-      key: 'plan_panels',
-      dependsOn: [],
-      retryable: true,
-      artifactTypes: ['storyboard.clip.phase1'],
-      failureMode: 'fail_run',
-    },
-    {
-      key: 'detail_panels',
-      dependsOn: ['plan_panels'],
-      retryable: true,
-      artifactTypes: [
-        'storyboard.clip.phase2_cinematography',
-        'storyboard.clip.phase2_acting',
-        'storyboard.clip.phase3',
-      ],
-      failureMode: 'fail_run',
-    },
-    {
-      key: 'voice_analyze',
-      dependsOn: ['detail_panels'],
-      retryable: true,
-      artifactTypes: ['voice.lines'],
-      failureMode: 'fail_run',
-    },
-    {
-      key: 'persist_storyboard_artifacts',
-      dependsOn: ['detail_panels', 'voice_analyze'],
-      retryable: false,
-      artifactTypes: [],
-      failureMode: 'fail_run',
-    },
-  ],
-  resolveRetryInvalidationStepKeys: ({ stepKey, existingStepKeys }) => resolveScriptToStoryboardInvalidation({
+const SCRIPT_TO_STORYBOARD_RETRY_INVALIDATION: WorkflowDefinition['resolveRetryInvalidationStepKeys'] = ({
+  stepKey,
+  existingStepKeys,
+}) => resolveScriptToStoryboardInvalidation({
     stepKey,
     existingStepKeys: new Set(existingStepKeys),
-  }),
+  })
+
+const RETRY_INVALIDATION_RESOLVERS: Record<string, WorkflowDefinition['resolveRetryInvalidationStepKeys']> = {
+  [TASK_TYPE.STORY_TO_SCRIPT_RUN]: STORY_TO_SCRIPT_RETRY_INVALIDATION,
+  [TASK_TYPE.SCRIPT_TO_STORYBOARD_RUN]: SCRIPT_TO_STORYBOARD_RETRY_INVALIDATION,
 }
 
-const WORKFLOW_DEFINITIONS: Record<string, WorkflowDefinition> = {
-  [STORY_TO_SCRIPT_DEFINITION.workflowType]: STORY_TO_SCRIPT_DEFINITION,
-  [SCRIPT_TO_STORYBOARD_DEFINITION.workflowType]: SCRIPT_TO_STORYBOARD_DEFINITION,
-}
+const WORKFLOW_DEFINITIONS: Record<string, WorkflowDefinition> = Object.fromEntries(
+  BUILTIN_WORKFLOW_CANVAS_DEFINITIONS.map((definition) => [
+    definition.workflowType,
+    compileWorkflowCanvasDefinition(
+      definition,
+      RETRY_INVALIDATION_RESOLVERS[definition.workflowType] || (({ stepKey }) => uniqueStepKeys([stepKey])),
+    ),
+  ]),
+)
 
 export function getWorkflowDefinition(workflowType: string): WorkflowDefinition | null {
   return WORKFLOW_DEFINITIONS[workflowType] || null

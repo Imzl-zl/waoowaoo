@@ -53,13 +53,11 @@ export function useUpdateProjectPanelVideoPrompt(projectId: string) {
 
   return useMutation({
     mutationFn: async ({
-      storyboardId,
-      panelIndex,
+      panelId,
       value,
       field = 'videoPrompt',
     }: {
-      storyboardId: string
-      panelIndex: number
+      panelId: string
       value: string
       field?: 'videoPrompt' | 'firstLastFramePrompt'
     }) =>
@@ -69,8 +67,7 @@ export function useUpdateProjectPanelVideoPrompt(projectId: string) {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            storyboardId,
-            panelIndex,
+            panelId,
             ...(field === 'firstLastFramePrompt'
               ? { firstLastFramePrompt: value }
               : { videoPrompt: value }),

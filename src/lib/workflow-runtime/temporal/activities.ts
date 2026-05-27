@@ -11,11 +11,16 @@ import {
 import { publishTemporalRunLifecycleEvent } from './events'
 import {
   type TemporalWorkflowFailureInput,
+  type TemporalPublishedWorkflowStep,
+  type TemporalPublishedWorkflowStepContext,
+  type TemporalPublishedWorkflowStepResult,
   type TemporalWorkflowRunInput,
   type TemporalWorkflowRunResult,
+  type TemporalWorkflowStepCompletionResult,
   type TemporalWorkflowStepDescriptor,
 } from './types'
 import { taskActivities } from './run-task'
+import { executePublishedWorkflowStepNode } from './published-workflow-activities'
 
 export type TemporalActivities = typeof activities
 
@@ -62,7 +67,7 @@ const lifecycleActivities = {
   },
   async recordWorkflowStepCompleted(
     input: TemporalWorkflowRunInput,
-    result: TemporalWorkflowRunResult,
+    result: TemporalWorkflowStepCompletionResult,
     stepInput?: TemporalWorkflowStepDescriptor | null,
   ) {
     const current = activityInfo()
@@ -152,7 +157,27 @@ const lifecycleActivities = {
   },
 }
 
+const publishedWorkflowActivities = {
+  async executePublishedWorkflowStep(
+    workflow: TemporalWorkflowRunInput,
+    step: TemporalPublishedWorkflowStep,
+    context: TemporalPublishedWorkflowStepContext,
+  ): Promise<TemporalPublishedWorkflowStepResult> {
+    const current = activityInfo()
+    return executePublishedWorkflowStepNode({
+      workflow,
+      step,
+      context,
+      activityId: current.activityId,
+      activity: {
+        attempt: current.attempt,
+      },
+    })
+  },
+}
+
 export const activities = {
   ...lifecycleActivities,
+  ...publishedWorkflowActivities,
   ...taskActivities,
 }

@@ -262,6 +262,18 @@ function resolveActualForSync<T>(
     }
   }
 
+  const payload = result && typeof result === 'object' ? result as Record<string, unknown> : null
+  const actualVideoTokens = payload ? asNumber(payload.actualVideoTokens) : null
+  if (params.apiType === 'video' && actualVideoTokens !== null && actualVideoTokens >= 0) {
+    return {
+      actualCost: calcVideoByTokens(params.model, actualVideoTokens, params.metadata),
+      actualQuantity: actualVideoTokens,
+      metadata: {
+        actualVideoTokens,
+      },
+    }
+  }
+
   if (params.extractActualQuantity) {
     const actualQuantity = asNumber(params.extractActualQuantity(result))
     if (actualQuantity !== null && actualQuantity >= 0) {
@@ -707,14 +719,38 @@ export async function withVoiceBilling<T>(
   maxFreezeSeconds: number,
   recordParams: BillingRecordParams,
   generateFn: () => Promise<T>,
+): Promise<T>
+export async function withVoiceBilling<T>(
+  userId: string,
+  maxFreezeSeconds: number,
+  model: string,
+  recordParams: BillingRecordParams,
+  generateFn: () => Promise<T>,
+): Promise<T>
+export async function withVoiceBilling<T>(
+  userId: string,
+  maxFreezeSeconds: number,
+  modelOrRecordParams: string | BillingRecordParams,
+  recordParamsOrGenerateFn: BillingRecordParams | (() => Promise<T>),
+  maybeGenerateFn?: () => Promise<T>,
 ): Promise<T> {
+  const model = typeof modelOrRecordParams === 'string' ? modelOrRecordParams : 'index-tts2'
+  const recordParams = typeof modelOrRecordParams === 'string'
+    ? recordParamsOrGenerateFn
+    : modelOrRecordParams
+  const generateFn = typeof modelOrRecordParams === 'string'
+    ? maybeGenerateFn
+    : recordParamsOrGenerateFn
+  if (typeof generateFn !== 'function' || typeof recordParams === 'function') {
+    throw new Error('withVoiceBilling requires recordParams and generateFn')
+  }
   return await withSyncBillingCore(
     {
       userId,
       projectId: recordParams.projectId,
       action: recordParams.action,
       apiType: 'voice',
-      model: 'index-tts2',
+      model,
       quantity: maxFreezeSeconds,
       unit: 'second',
       metadata: recordParams.metadata,

@@ -48,7 +48,10 @@ export async function processMediaResult(options: ProcessMediaOptions): Promise<
       return await downloadAndUploadVideo(source, key, 3, downloadHeaders)
     }
 
-    const response = await fetch(toFetchableUrl(source))
+    const response = await fetch(
+      toFetchableUrl(source),
+      downloadHeaders ? { headers: downloadHeaders } : undefined,
+    )
     const buffer = Buffer.from(await response.arrayBuffer()) as Buffer
     return await uploadObject(buffer, key, undefined, contentType)
   }

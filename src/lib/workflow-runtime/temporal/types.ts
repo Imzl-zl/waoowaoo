@@ -13,6 +13,7 @@ export const TEMPORAL_SMOKE_STEP = {
 export const TEMPORAL_WORKFLOW_TYPE = {
   SMOKE: 'smokeWorkflow',
   RUN_TASK: 'runTaskWorkflow',
+  PUBLISHED_WORKFLOW: 'publishedWorkflow',
 } as const
 
 export type TemporalWorkflowType =
@@ -36,12 +37,45 @@ export type TemporalWorkflowRunInput = Readonly<{
   payload?: Record<string, unknown> | null
 }>
 
+export type TemporalWorkflowExecutionInput = Readonly<Record<string, unknown>>
+
 export type TemporalWorkflowRunResult = Readonly<{
   runId: string
   workflowType: string
   status: 'completed'
   activityId: string
 }>
+
+export type TemporalPublishedWorkflowStepActivityInfo = Readonly<{
+  attempt: number
+}>
+
+export type TemporalPublishedWorkflowStep = Readonly<{
+  nodeId: string
+  nodeType: string
+  nodeTitle: string
+  stepKey: string
+  dependsOn: readonly string[]
+  config: Readonly<Record<string, unknown>>
+  artifactTypes: readonly string[]
+  temporalStep: TemporalWorkflowStepDescriptor
+}>
+
+export type TemporalPublishedWorkflowStepResult = Readonly<{
+  stepKey: string
+  nodeId: string
+  nodeType: string
+  status: 'completed'
+  activityId: string
+  text: string
+  artifactPayload: unknown
+}>
+
+export type TemporalPublishedWorkflowStepContext = Readonly<Record<string, TemporalPublishedWorkflowStepResult>>
+
+export type TemporalWorkflowStepCompletionResult =
+  | TemporalWorkflowRunResult
+  | TemporalPublishedWorkflowStepResult
 
 export type TemporalTaskWorkflowResult = Readonly<{
   runId: string
@@ -77,7 +111,7 @@ type TemporalWorkflowStepBasePayload = Readonly<{
 
 export type TemporalWorkflowStepPayload = TemporalWorkflowStepBasePayload & Readonly<{
   temporalActivityType: 'recordWorkflowStepStarted' | 'recordWorkflowStepCompleted'
-  artifactPayload?: TemporalWorkflowRunResult
+  artifactPayload?: unknown
   text?: string
 }>
 

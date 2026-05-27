@@ -25,6 +25,45 @@ function readText(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
+function readRunId(payload: Record<string, unknown>): string {
+  const direct = readText(payload.runId).trim()
+  if (direct) return direct
+  const run = toObject(payload.run)
+  return readText(run.id).trim()
+}
+
+function isObservableRunStatus(value: string): boolean {
+  return value === 'queued' || value === 'running' || value === 'canceling'
+}
+
+function resolveObservableRunId(data: unknown): string {
+  const payload = toObject(data)
+  const runId = readRunId(payload)
+  if (!runId) return ''
+  const run = toObject(payload.run)
+  const runStatus = readText(run.status)
+  return isObservableRunStatus(runStatus) ? runId : ''
+}
+
+function applyAcceptedRunEvent(args: {
+  runId: string
+  data: unknown
+  applyAndCapture: (streamEvent: RunStreamEvent) => void
+}) {
+  const payload = toObject(args.data)
+  const run = toObject(payload.run)
+  const runStatus = readText(run.status)
+  if (!isObservableRunStatus(runStatus)) return
+  args.applyAndCapture({
+    runId: args.runId,
+    event: 'run.start',
+    ts: new Date().toISOString(),
+    status: 'running',
+    message: runStatus,
+    payload: Object.keys(run).length > 0 ? run : payload,
+  })
+}
+
 async function reconcileRunTerminalState(runId: string): Promise<RunResult | null> {
   const response = await apiFetch(`/api/runs/${runId}`, {
     method: 'GET',
@@ -205,14 +244,16 @@ export async function executeRunRequest(args: RunRequestExecutorArgs): Promise<R
       const data = await response.json().catch(() => null)
       if (isAsyncTaskResponse(data)) {
         const asyncPayload = toObject(data)
-        const runId =
-          typeof asyncPayload.runId === 'string' && asyncPayload.runId.trim()
-            ? asyncPayload.runId.trim()
-            : ''
+        const runId = readRunId(asyncPayload)
         if (!runId) {
           throw new Error('async task response missing runId')
         }
 
+        applyAcceptedRunEvent({
+          runId,
+          data,
+          applyAndCapture: args.applyAndCapture,
+        })
         const result = await waitRunEventsTerminal({
           runId,
           controller: args.controller,
@@ -220,6 +261,23 @@ export async function executeRunRequest(args: RunRequestExecutorArgs): Promise<R
           applyAndCapture: args.applyAndCapture,
         })
 
+        args.finalResultRef.current = result
+        return result
+      }
+
+      const observableRunId = resolveObservableRunId(data)
+      if (observableRunId) {
+        applyAcceptedRunEvent({
+          runId: observableRunId,
+          data,
+          applyAndCapture: args.applyAndCapture,
+        })
+        const result = await waitRunEventsTerminal({
+          runId: observableRunId,
+          controller: args.controller,
+          taskStreamTimeoutMs: args.taskStreamTimeoutMs,
+          applyAndCapture: args.applyAndCapture,
+        })
         args.finalResultRef.current = result
         return result
       }

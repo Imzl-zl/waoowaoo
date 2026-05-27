@@ -3,7 +3,6 @@ import { ApplicationFailure } from '@temporalio/common'
 import { getTaskById } from '@/lib/task/service'
 import {
   TASK_STATUS,
-  TASK_TYPE,
   type TaskBillingInfo,
   type TaskJobData,
   type TaskType,
@@ -16,6 +15,7 @@ import {
 } from '@/lib/workers/shared'
 import { runTextTaskHandlerWithContext } from '@/lib/workers/handlers/text-task-router'
 import { normalizeTemporalWorkflowRunInput } from './contract'
+import { isTemporalRunTaskType } from './run-task-contract'
 import type { TemporalTaskWorkflowResult, TemporalWorkflowRunInput } from './types'
 
 const TEMPORAL_TEXT_QUEUE_NAME = 'temporal:text'
@@ -23,10 +23,6 @@ const TEMPORAL_TASK_MAX_ATTEMPTS = 5
 const TEMPORAL_TASK_BACKOFF_MS = 2_000
 const TEMPORAL_TASK_RECEIVED_PROGRESS = 5
 const NON_RETRYABLE_TASK_FAILURE_TYPE = 'TASK_TERMINAL_FAILURE'
-const RUN_TASK_TYPES: ReadonlySet<TaskType> = new Set([
-  TASK_TYPE.STORY_TO_SCRIPT_RUN,
-  TASK_TYPE.SCRIPT_TO_STORYBOARD_RUN,
-])
 
 type TaskRow = NonNullable<Awaited<ReturnType<typeof getTaskById>>>
 
@@ -50,7 +46,7 @@ function readString(source: Record<string, unknown>, key: string): string | null
 }
 
 function isRunTaskType(value: string): value is TaskType {
-  return RUN_TASK_TYPES.has(value as TaskType)
+  return isTemporalRunTaskType(value)
 }
 
 function normalizeLocaleValue(value: unknown): Locale | null {

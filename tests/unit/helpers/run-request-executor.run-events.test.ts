@@ -104,6 +104,86 @@ describe('run-request-executor run events path', () => {
     }
   })
 
+  it('observes run-event lifecycle when a non-task response returns a queued runId', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({
+        runId: 'run_visual_1',
+        run: {
+          id: 'run_visual_1',
+          status: 'queued',
+          workflowType: 'custom.workflow',
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        runId: 'run_visual_1',
+        afterSeq: 0,
+        events: [
+          {
+            seq: 1,
+            eventType: 'step.start',
+            stepKey: 'draft',
+            attempt: 1,
+            payload: {
+              stepTitle: 'Draft',
+              stepIndex: 1,
+              stepTotal: 1,
+            },
+            createdAt: '2026-02-28T00:00:01.000Z',
+          },
+          {
+            seq: 2,
+            eventType: 'step.complete',
+            stepKey: 'draft',
+            attempt: 1,
+            payload: {
+              text: 'done',
+            },
+            createdAt: '2026-02-28T00:00:02.000Z',
+          },
+          {
+            seq: 3,
+            eventType: 'run.complete',
+            payload: {
+              summary: { ok: true },
+            },
+            createdAt: '2026-02-28T00:00:03.000Z',
+          },
+        ],
+      }))
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = fetchMock
+
+    try {
+      const captured: RunStreamEvent[] = []
+      const result = await executeRunRequest({
+        endpointUrl: '/api/projects/project_1/workflows/custom.workflow/execute',
+        requestBody: { prompt: 'runtime text' },
+        controller: new AbortController(),
+        taskStreamTimeoutMs: 30_000,
+        applyAndCapture: (event) => {
+          captured.push(event)
+        },
+        finalResultRef: { current: null },
+      })
+
+      expect(result).toEqual(expect.objectContaining({
+        runId: 'run_visual_1',
+        status: 'completed',
+      }))
+      expect(captured[0]).toEqual(expect.objectContaining({
+        runId: 'run_visual_1',
+        event: 'run.start',
+        message: 'queued',
+      }))
+      expect(captured.some((event) => event.event === 'step.complete' && event.text === 'done')).toBe(true)
+      expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/runs/run_visual_1/events?afterSeq=0&limit=500')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   it('surfaces run-events fetch errors instead of swallowing them', async () => {
     const fetchMock = vi.fn<typeof fetch>()
     fetchMock

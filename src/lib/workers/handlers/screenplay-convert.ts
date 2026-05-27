@@ -129,11 +129,19 @@ export async function handleScreenplayConvertTask(job: Job<TaskJobData>) {
 
       // 记录 prompt 输入
       onProjectNameAvailable(projectId, project.name)
-      logAIAnalysis(job.data.userId, 'worker', projectId, project.name, {
-        action: `SCREENPLAY_CONVERT_PROMPT`,
-        input: { stepId, stepTitle, prompt },
-        model: analysisModel,
-      })
+      logAIAnalysis(
+        'SCREENPLAY_CONVERT_PROMPT',
+        'SCREENPLAY_CONVERT_PROMPT',
+        {
+          action: 'SCREENPLAY_CONVERT_PROMPT',
+          input: { stepId, stepTitle, prompt },
+          model: analysisModel,
+        },
+        job.data.userId,
+        'worker',
+        projectId,
+        project.name,
+      )
 
       let screenplayStored = false
       let stepLastError: Error | null = null
@@ -171,17 +179,25 @@ export async function handleScreenplayConvertTask(job: Job<TaskJobData>) {
           }
 
           // 记录 AI 输出
-          logAIAnalysis(job.data.userId, 'worker', projectId, project.name, {
-            action: `SCREENPLAY_CONVERT_OUTPUT`,
-            output: {
-              stepId,
-              stepTitle,
-              attempt,
-              rawText: responseText,
-              textLength: responseText.length,
+          logAIAnalysis(
+            'SCREENPLAY_CONVERT_OUTPUT',
+            'SCREENPLAY_CONVERT_OUTPUT',
+            {
+              action: 'SCREENPLAY_CONVERT_OUTPUT',
+              output: {
+                stepId,
+                stepTitle,
+                attempt,
+                rawText: responseText,
+                textLength: responseText.length,
+              },
+              model: analysisModel,
             },
-            model: analysisModel,
-          })
+            job.data.userId,
+            'worker',
+            projectId,
+            project.name,
+          )
 
           const screenplay = parseScreenplayPayload(responseText)
           screenplay.clip_id = clip.id

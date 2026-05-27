@@ -5,6 +5,7 @@ import type {
   TemporalWorkflowFailurePayload,
   TemporalWorkflowRunInput,
   TemporalWorkflowRunResult,
+  TemporalWorkflowStepCompletionResult,
   TemporalWorkflowStepDescriptor,
   TemporalWorkflowStepFailurePayload,
   TemporalWorkflowStepPayload,
@@ -181,17 +182,18 @@ export function buildTemporalWorkflowStepStartedPayload(input: {
 
 export function buildTemporalWorkflowStepCompletedPayload(input: {
   activityId: string
-  result: TemporalWorkflowRunResult
+  result: TemporalWorkflowStepCompletionResult
   step?: TemporalWorkflowStepDescriptor | null
   text?: string
 }): TemporalWorkflowStepPayload {
+  const resultText = 'text' in input.result ? input.result.text : undefined
   return {
     ...buildStepPayloadBase({
       activityId: input.activityId,
       temporalActivityType: 'recordWorkflowStepCompleted',
       step: input.step,
     }),
-    text: input.text || 'Temporal smoke workflow completed',
+    text: input.text || resultText || 'Temporal smoke workflow completed',
     artifactPayload: input.result,
   }
 }

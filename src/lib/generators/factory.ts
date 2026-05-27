@@ -6,9 +6,8 @@
  */
 
 import { ImageGenerator, VideoGenerator, AudioGenerator } from './base'
-import { FalBananaGenerator } from './fal'
-import { ArkSeedreamGenerator, ArkSeedanceVideoGenerator } from './ark'
-import { FalVideoGenerator } from './fal'
+import { FalImageGenerator, FalVideoGenerator } from './fal'
+import { ArkImageGenerator, ArkVideoGenerator } from './ark'
 import {
     GoogleGeminiImageGenerator,
     GoogleImagenGenerator,
@@ -44,7 +43,7 @@ export function createImageGenerator(provider: string, modelId?: string): ImageG
     const providerKey = getProviderKey(provider).toLowerCase()
     switch (providerKey) {
         case 'fal':
-            return new FalBananaGenerator()
+            return new FalImageGenerator()
         case 'google':
             if (actualModelId === 'gemini-3-pro-image-preview-batch') {
                 return new GoogleGeminiBatchImageGenerator()
@@ -58,7 +57,7 @@ export function createImageGenerator(provider: string, modelId?: string): ImageG
         case 'imagen':
             return new GoogleImagenGenerator(actualModelId)
         case 'ark':
-            return new ArkSeedreamGenerator()
+            return new ArkImageGenerator()
         case 'gemini-compatible':
             return new GeminiCompatibleImageGenerator(actualModelId, provider)
         case 'openai-compatible':
@@ -81,7 +80,7 @@ export function createVideoGenerator(provider: string): VideoGenerator {
         case 'fal':
             return new FalVideoGenerator()
         case 'ark':
-            return new ArkSeedanceVideoGenerator()
+            return new ArkVideoGenerator()
         case 'google':
             return new GoogleVeoVideoGenerator()
         case 'gemini-compatible':

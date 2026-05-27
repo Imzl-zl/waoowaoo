@@ -39,7 +39,7 @@ vi.mock('@/lib/media/outbound-image', () => ({
   normalizeToBase64ForGeneration: normalizeToBase64ForGenerationMock,
 }))
 
-import { ArkSeedreamGenerator } from '@/lib/generators/ark'
+import { ArkImageGenerator } from '@/lib/generators/ark'
 import { GeminiCompatibleImageGenerator } from '@/lib/generators/image/gemini-compatible'
 import { GoogleGeminiImageGenerator } from '@/lib/generators/image/google'
 
@@ -103,7 +103,7 @@ describe('image provider smoke tests', () => {
       data: [{ url: 'https://seedream.test/image.png' }],
     })
 
-    const generator = new ArkSeedreamGenerator()
+    const generator = new ArkImageGenerator()
     const result = await generator.generate({
       userId: 'user-1',
       prompt: 'refine this style',
@@ -145,7 +145,7 @@ describe('image provider smoke tests', () => {
       ],
     })
 
-    const generator = new ArkSeedreamGenerator()
+    const generator = new ArkImageGenerator()
     const result = await generator.generate({
       userId: 'user-1',
       prompt: 'refine this style',

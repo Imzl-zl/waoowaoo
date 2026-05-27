@@ -49,8 +49,7 @@ export interface WorkspaceStageRuntimeValue {
   ) => Promise<void>
   onGenerateAllVideos: (options?: BatchVideoGenerationParams) => Promise<void>
   onUpdateVideoPrompt: (
-    storyboardId: string,
-    panelIndex: number,
+    panelId: string,
     value: string,
     field?: 'videoPrompt' | 'firstLastFramePrompt',
   ) => Promise<void>

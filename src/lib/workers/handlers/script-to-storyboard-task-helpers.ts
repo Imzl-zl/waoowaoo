@@ -104,11 +104,19 @@ export function createScriptToStoryboardRunStep(params: {
       blockedBy: Array.isArray(meta.blockedBy) ? meta.blockedBy : [],
     })
 
-    logAIAnalysis(params.context.data.userId, 'worker', params.projectId, params.projectName, {
-      action: `SCRIPT_TO_STORYBOARD_PROMPT:${action}`,
-      input: { stepId: meta.stepId, stepTitle: meta.stepTitle, prompt },
-      model: params.model,
-    })
+    logAIAnalysis(
+      `SCRIPT_TO_STORYBOARD_PROMPT:${action}`,
+      `SCRIPT_TO_STORYBOARD_PROMPT:${action}`,
+      {
+        action: `SCRIPT_TO_STORYBOARD_PROMPT:${action}`,
+        input: { stepId: meta.stepId, stepTitle: meta.stepTitle, prompt },
+        model: params.model,
+      },
+      params.context.data.userId,
+      'worker',
+      params.projectId,
+      params.projectName,
+    )
 
     const output = await executeAiTextStep({
       userId: params.context.data.userId,
@@ -126,17 +134,25 @@ export function createScriptToStoryboardRunStep(params: {
     })
     await params.callbacks.flush()
 
-    logAIAnalysis(params.context.data.userId, 'worker', params.projectId, params.projectName, {
-      action: `SCRIPT_TO_STORYBOARD_OUTPUT:${action}`,
-      output: {
-        stepId: meta.stepId,
-        stepTitle: meta.stepTitle,
-        rawText: output.text,
-        textLength: output.text.length,
-        reasoningLength: output.reasoning.length,
+    logAIAnalysis(
+      `SCRIPT_TO_STORYBOARD_OUTPUT:${action}`,
+      `SCRIPT_TO_STORYBOARD_OUTPUT:${action}`,
+      {
+        action: `SCRIPT_TO_STORYBOARD_OUTPUT:${action}`,
+        output: {
+          stepId: meta.stepId,
+          stepTitle: meta.stepTitle,
+          rawText: output.text,
+          textLength: output.text.length,
+          reasoningLength: output.reasoning.length,
+        },
+        model: params.model,
       },
-      model: params.model,
-    })
+      params.context.data.userId,
+      'worker',
+      params.projectId,
+      params.projectName,
+    )
 
     return {
       text: output.text,

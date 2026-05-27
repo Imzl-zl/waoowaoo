@@ -1,9 +1,10 @@
 import { ApiError } from '@/lib/api-errors'
 import { launchTemporalWorkflowRun } from '@/lib/workflow-runtime/temporal/launch'
+import { isTemporalRunTaskType } from '@/lib/workflow-runtime/temporal/run-task-contract'
 import { TEMPORAL_WORKFLOW_TYPE } from '@/lib/workflow-runtime/temporal/types'
 import type { TemporalWorkflowLaunchResult } from '@/lib/workflow-runtime/temporal/launch'
 import type { TemporalWorkflowRunInput } from '@/lib/workflow-runtime/temporal/types'
-import { TASK_TYPE, type TaskJobData, type TaskType } from './types'
+import type { TaskJobData, TaskType } from './types'
 
 export const TASK_EXECUTION_RUNTIME = {
   BULLMQ: 'bullmq',
@@ -37,11 +38,6 @@ export type LaunchTaskExecutionDeps = Readonly<{
   launchWorkflow?: TemporalRunTaskLauncher
 }>
 
-const TEMPORAL_RUN_TASK_TYPES: ReadonlySet<TaskType> = new Set([
-  TASK_TYPE.STORY_TO_SCRIPT_RUN,
-  TASK_TYPE.SCRIPT_TO_STORYBOARD_RUN,
-])
-
 function readRuntimeFromEnv(): TaskExecutionRuntime {
   const value = process.env.TASK_EXECUTION_RUNTIME?.trim()
   if (!value) return TASK_EXECUTION_RUNTIME.BULLMQ
@@ -63,7 +59,7 @@ function requireRunId(runId: string | null | undefined): string {
 }
 
 function assertTemporalRunTaskType(type: TaskType) {
-  if (TEMPORAL_RUN_TASK_TYPES.has(type)) return
+  if (isTemporalRunTaskType(type)) return
   throw new ApiError('INVALID_PARAMS', {
     message: `task type ${type} is not supported by Temporal run-task execution`,
   })

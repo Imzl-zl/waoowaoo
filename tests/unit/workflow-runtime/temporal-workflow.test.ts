@@ -7,10 +7,13 @@ import {
   buildTemporalWorkflowStepFailurePayload,
   buildTemporalWorkflowStepStartedPayload,
 } from '@/lib/workflow-runtime/temporal/contract'
-import { runTaskWorkflow } from '@/lib/workflow-runtime/temporal/workflows'
+import { publishedWorkflow, runTaskWorkflow, smokeWorkflow } from '@/lib/workflow-runtime/temporal/workflows'
+import { TEMPORAL_RUN_TASK_FAILURE_STEP } from '@/lib/workflow-runtime/temporal/run-task-contract'
 import {
   TEMPORAL_SMOKE_STEP,
   TEMPORAL_WORKFLOW_TYPE,
+  type TemporalPublishedWorkflowStep,
+  type TemporalPublishedWorkflowStepResult,
   type TemporalTaskWorkflowResult,
   type TemporalWorkflowRunInput,
 } from '@/lib/workflow-runtime/temporal/types'
@@ -20,6 +23,7 @@ const temporalActivitiesMock = vi.hoisted(() => ({
   recordWorkflowStepStarted: vi.fn(),
   recordWorkflowStepCompleted: vi.fn(),
   recordWorkflowCompleted: vi.fn(),
+  executePublishedWorkflowStep: vi.fn(),
   executeRunCentricTask: vi.fn(),
   recordWorkflowStepFailed: vi.fn(),
   recordWorkflowFailed: vi.fn(),
@@ -34,10 +38,40 @@ beforeEach(() => {
   temporalActivitiesMock.recordWorkflowStepStarted.mockReset()
   temporalActivitiesMock.recordWorkflowStepCompleted.mockReset()
   temporalActivitiesMock.recordWorkflowCompleted.mockReset()
+  temporalActivitiesMock.executePublishedWorkflowStep.mockReset()
   temporalActivitiesMock.executeRunCentricTask.mockReset()
   temporalActivitiesMock.recordWorkflowStepFailed.mockReset()
   temporalActivitiesMock.recordWorkflowFailed.mockReset()
 })
+
+function buildPublishedWorkflowInput(
+  steps: readonly TemporalPublishedWorkflowStep[],
+): TemporalWorkflowRunInput {
+  return {
+    runId: 'run-1',
+    workflowType: 'custom.workflow',
+    projectId: 'project-1',
+    userId: 'user-1',
+    targetType: 'WorkflowDefinitionVersion',
+    targetId: 'version-1',
+    payload: { publishedWorkflowSteps: steps },
+  }
+}
+
+function buildPublishedStepResult(
+  step: TemporalPublishedWorkflowStep,
+  text: string,
+): TemporalPublishedWorkflowStepResult {
+  return {
+    stepKey: step.stepKey,
+    nodeId: step.nodeId,
+    nodeType: step.nodeType,
+    status: 'completed',
+    activityId: `activity-${step.stepKey}`,
+    text,
+    artifactPayload: { text },
+  }
+}
 
 function buildRunTaskWorkflowInput(): TemporalWorkflowRunInput {
   return {
@@ -49,14 +83,6 @@ function buildRunTaskWorkflowInput(): TemporalWorkflowRunInput {
     targetType: 'task',
     targetId: 'task-1',
   }
-}
-
-const RUN_TASK_FAILURE_STEP = {
-  stepKey: 'run_task.execute',
-  stepTitle: 'Run task execution',
-  stepIndex: 1,
-  stepTotal: 1,
-  attempt: 1,
 }
 
 describe('buildTemporalWorkflowRunResult', () => {
@@ -277,8 +303,220 @@ describe('runTaskWorkflow', () => {
     expect(temporalActivitiesMock.recordWorkflowStepFailed).toHaveBeenCalledWith(
       input,
       failure,
-      RUN_TASK_FAILURE_STEP,
+      TEMPORAL_RUN_TASK_FAILURE_STEP,
     )
     expect(temporalActivitiesMock.recordWorkflowFailed).toHaveBeenCalledWith(input, failure)
+  })
+})
+
+describe('publishedWorkflow', () => {
+  const smokeStep: TemporalPublishedWorkflowStep = {
+    nodeId: 'smoke',
+    nodeType: 'runtime.smoke',
+    nodeTitle: 'Smoke check',
+    stepKey: 'smoke_check',
+    dependsOn: [],
+    config: { message: 'hello' },
+    artifactTypes: ['smoke.output'],
+    temporalStep: {
+      stepKey: 'smoke_check',
+      stepTitle: 'Smoke check',
+      stepIndex: 1,
+      stepTotal: 2,
+      attempt: 1,
+    },
+  }
+  const transformStep: TemporalPublishedWorkflowStep = {
+    nodeId: 'transform',
+    nodeType: 'data.transform',
+    nodeTitle: 'Render text',
+    stepKey: 'render_text',
+    dependsOn: ['smoke_check'],
+    config: { mode: 'template', template: 'Result: {{ smoke_check.text }}' },
+    artifactTypes: ['data.output'],
+    temporalStep: {
+      stepKey: 'render_text',
+      stepTitle: 'Render text',
+      stepIndex: 2,
+      stepTotal: 2,
+      attempt: 1,
+    },
+  }
+  const finalStep: TemporalPublishedWorkflowStep = {
+    nodeId: 'final',
+    nodeType: 'data.transform',
+    nodeTitle: 'Final text',
+    stepKey: 'final_text',
+    dependsOn: ['render_text'],
+    config: { mode: 'template', template: 'Final: {{ render_text.text }}' },
+    artifactTypes: ['data.output'],
+    temporalStep: {
+      stepKey: 'final_text',
+      stepTitle: 'Final text',
+      stepIndex: 3,
+      stepTotal: 3,
+      attempt: 1,
+    },
+  }
+
+  it('exposes the dedicated published workflow type', () => {
+    expect(TEMPORAL_WORKFLOW_TYPE.PUBLISHED_WORKFLOW).toBe('publishedWorkflow')
+  })
+
+  it('executes published workflow steps with dependency context and lifecycle events', async () => {
+    const input = buildPublishedWorkflowInput([smokeStep, transformStep])
+    const smokeResult = buildPublishedStepResult(smokeStep, 'hello')
+    const transformResult = buildPublishedStepResult(transformStep, 'Result: hello')
+    temporalActivitiesMock.recordWorkflowStarted.mockResolvedValue({
+      runId: 'run-1',
+      workflowType: 'custom.workflow',
+      activityId: 'activity-start',
+    })
+    temporalActivitiesMock.executePublishedWorkflowStep
+      .mockResolvedValueOnce(smokeResult)
+      .mockResolvedValueOnce(transformResult)
+
+    await expect(publishedWorkflow(input)).resolves.toEqual(expect.objectContaining({
+      runId: 'run-1',
+      workflowType: 'custom.workflow',
+      status: 'completed',
+    }))
+
+    expect(temporalActivitiesMock.recordWorkflowStarted).toHaveBeenCalledWith(input)
+    expect(temporalActivitiesMock.recordWorkflowStepStarted).toHaveBeenNthCalledWith(1, input, smokeStep.temporalStep)
+    expect(temporalActivitiesMock.executePublishedWorkflowStep).toHaveBeenNthCalledWith(1, input, smokeStep, {})
+    expect(temporalActivitiesMock.recordWorkflowStepCompleted).toHaveBeenNthCalledWith(
+      1,
+      input,
+      smokeResult,
+      smokeStep.temporalStep,
+    )
+    expect(temporalActivitiesMock.recordWorkflowStepStarted).toHaveBeenNthCalledWith(2, input, transformStep.temporalStep)
+    expect(temporalActivitiesMock.executePublishedWorkflowStep).toHaveBeenNthCalledWith(2, input, transformStep, {
+      smoke_check: smokeResult,
+    })
+    expect(temporalActivitiesMock.recordWorkflowStepCompleted).toHaveBeenNthCalledWith(
+      2,
+      input,
+      transformResult,
+      transformStep.temporalStep,
+    )
+    expect(temporalActivitiesMock.recordWorkflowCompleted).toHaveBeenCalledWith(
+      input,
+      expect.objectContaining({ status: 'completed' }),
+    )
+    expect(temporalActivitiesMock.recordWorkflowStepFailed).not.toHaveBeenCalled()
+    expect(temporalActivitiesMock.recordWorkflowFailed).not.toHaveBeenCalled()
+  })
+
+  it('passes only direct step dependencies into each published Activity payload', async () => {
+    const input = buildPublishedWorkflowInput([smokeStep, transformStep, finalStep])
+    const smokeResult = buildPublishedStepResult(smokeStep, 'hello')
+    const transformResult = buildPublishedStepResult(transformStep, 'Result: hello')
+    const finalResult = buildPublishedStepResult(finalStep, 'Final: Result: hello')
+    temporalActivitiesMock.recordWorkflowStarted.mockResolvedValue({
+      runId: 'run-1',
+      workflowType: 'custom.workflow',
+      activityId: 'activity-start',
+    })
+    temporalActivitiesMock.executePublishedWorkflowStep
+      .mockResolvedValueOnce(smokeResult)
+      .mockResolvedValueOnce(transformResult)
+      .mockResolvedValueOnce(finalResult)
+
+    await expect(publishedWorkflow(input)).resolves.toEqual(expect.objectContaining({
+      runId: 'run-1',
+      workflowType: 'custom.workflow',
+      status: 'completed',
+    }))
+
+    expect(temporalActivitiesMock.executePublishedWorkflowStep).toHaveBeenNthCalledWith(
+      3,
+      input,
+      finalStep,
+      { render_text: transformResult },
+    )
+  })
+
+  it('records active step and run failure lifecycle before rethrowing published step errors', async () => {
+    const input = buildPublishedWorkflowInput([smokeStep, transformStep])
+    const smokeResult = buildPublishedStepResult(smokeStep, 'hello')
+    const error = new Error('transform failed')
+    const failure = {
+      errorCode: 'Error',
+      message: 'transform failed',
+      retryable: true,
+    }
+    temporalActivitiesMock.recordWorkflowStarted.mockResolvedValue({
+      runId: 'run-1',
+      workflowType: 'custom.workflow',
+      activityId: 'activity-start',
+    })
+    temporalActivitiesMock.executePublishedWorkflowStep
+      .mockResolvedValueOnce(smokeResult)
+      .mockRejectedValueOnce(error)
+
+    await expect(publishedWorkflow(input)).rejects.toBe(error)
+
+    expect(temporalActivitiesMock.recordWorkflowStepFailed).toHaveBeenCalledWith(
+      input,
+      failure,
+      transformStep.temporalStep,
+    )
+    expect(temporalActivitiesMock.recordWorkflowFailed).toHaveBeenCalledWith(input, failure)
+    expect(temporalActivitiesMock.recordWorkflowCompleted).not.toHaveBeenCalled()
+  })
+})
+
+describe('smokeWorkflow', () => {
+  it('emits lifecycle events for explicit published workflow step descriptors', async () => {
+    const input: TemporalWorkflowRunInput = {
+      runId: 'run-1',
+      workflowType: 'custom.workflow',
+      projectId: 'project-1',
+      userId: 'user-1',
+      targetType: 'WorkflowDefinitionVersion',
+      targetId: 'version-1',
+      payload: {
+        temporalSteps: [
+          {
+            stepKey: 'smoke_check',
+            stepTitle: 'Smoke check',
+            stepIndex: 1,
+            stepTotal: 1,
+            attempt: 1,
+          },
+        ],
+      },
+    }
+    temporalActivitiesMock.recordWorkflowStarted.mockResolvedValue({
+      runId: 'run-1',
+      workflowType: 'custom.workflow',
+      activityId: 'activity-start',
+    })
+
+    await smokeWorkflow(input)
+
+    const step = {
+      stepKey: 'smoke_check',
+      stepTitle: 'Smoke check',
+      stepIndex: 1,
+      stepTotal: 1,
+      attempt: 1,
+    }
+    expect(temporalActivitiesMock.recordWorkflowStepStarted).toHaveBeenCalledWith(input, step)
+    expect(temporalActivitiesMock.recordWorkflowStepCompleted).toHaveBeenCalledWith(
+      input,
+      expect.objectContaining({
+        runId: 'run-1',
+        workflowType: 'custom.workflow',
+        status: 'completed',
+      }),
+      step,
+    )
+    expect(temporalActivitiesMock.recordWorkflowCompleted).toHaveBeenCalledWith(
+      input,
+      expect.objectContaining({ status: 'completed' }),
+    )
   })
 })

@@ -206,6 +206,11 @@ export {
 export {
     useScriptToStoryboardRunStream,
 } from './useScriptToStoryboardRunStream'
+export {
+    usePublishedWorkflowRunStream,
+    type PublishedWorkflowRunParams,
+    type PublishedWorkflowRunResult,
+} from './usePublishedWorkflowRunStream'
 
 export {
     useAssetTaskPresentation,
@@ -225,6 +230,20 @@ export {
     useRefreshAll,
     type Episode,
 } from './useProjectData'
+
+export {
+    useProjectWorkflowDefinitions,
+    useProjectWorkflowDefinition,
+    useSaveProjectWorkflowDefinitionDraft,
+    usePublishProjectWorkflowDefinition,
+    useExecuteProjectWorkflowDefinition,
+    type ProjectWorkflowDefinitionDetail,
+    type ProjectWorkflowDefinitionSummary,
+    type ProjectWorkflowDefinitionVersion,
+    type ProjectWorkflowExecutionInput,
+    type ProjectWorkflowExecutionResponse,
+    type ExecuteProjectWorkflowDefinitionInput,
+} from './useWorkflowDefinitions'
 
 export {
     useUserModels,

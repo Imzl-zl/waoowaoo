@@ -54,8 +54,7 @@ export interface VideoStageShellProps {
   onGenerateAllVideos: (options?: BatchVideoGenerationParams) => Promise<void>
   onBack: () => void
   onUpdateVideoPrompt: (
-    storyboardId: string,
-    panelIndex: number,
+    panelId: string,
     value: string,
     field?: 'videoPrompt' | 'firstLastFramePrompt',
   ) => Promise<void>

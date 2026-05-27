@@ -119,8 +119,7 @@ interface BuildWorkspaceControllerViewModelParams {
     ) => Promise<void>
     handleGenerateAllVideos: (options?: BatchVideoGenerationParams) => Promise<void>
     handleUpdateVideoPrompt: (
-      storyboardId: string,
-      panelIndex: number,
+      panelId: string,
       value: string,
       field?: 'videoPrompt' | 'firstLastFramePrompt',
     ) => Promise<void>

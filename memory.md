@@ -1,92 +1,84 @@
 # waoowaoo 项目状态
 
-> 本文件是当前状态快照 + 最近活跃窗口，允许覆盖更新。
-> 完整历史归档见 `memory/archive/`，稳定规律见 `tools.md`。
+> 当前状态快照 + 最近活跃窗口。完整历史看 `memory/archive/`，稳定命令和模式看 `tools.md`。
 
 ## 当前基线
-- 运行栈：Node.js `>=18.18.0` / npm `>=9.0.0` / Next.js 15 / React 19 / Prisma + MySQL / BullMQ + Redis / MinIO / NextAuth / Temporal TS SDK / Vitest。
-- 常用启动链路：`cp .env.example .env` -> `docker compose up mysql redis minio -d` -> `npx prisma db push` -> `npm run dev`。
+- 最后更新：2026-05-27
+- 栈：Node.js `>=18.18.0` / npm `>=9.0.0` / Next.js 15 / React 19 / Prisma + MySQL / BullMQ + Redis / MinIO / NextAuth / Temporal TS SDK / Vitest。
+- 启动链路：`cp .env.example .env` -> `docker compose up mysql redis minio -d` -> `npx prisma db push` -> `npm run dev`。
 - 验证基线：`npm run verify:commit`、`npm run verify:push`、`npm run test:guards`、`npm run check:file-line-count`。
-- 最后更新：2026-05-06
+- 当前重点：visual workflow foundation、production-bible foundation 和兼容冗余清理均已完成当前切片；下一步应围绕 UI 编辑/锁定、持久化映射或 novel-promotion 迁移做独立切片。
 
 ## 已完成能力
-- 小说 / 剧本 / 分镜 / 配音 / 视频相关工作流已经落地，包含角色、场景、道具分析与多阶段 storyboard 流程。
-- 多 provider 模型配置中心已经具备 capability catalog、pricing catalog、capability validation、用户配置持久化和价格展示链路。
-- BullMQ image / video / voice / text workers、watchdog、bull-board 与 graph run runtime 已接通，可追踪任务生命周期、step / event / checkpoint 和 retry invalidation。
-- Temporal TypeScript 第一阶段边界已入仓：`src/lib/workflow-runtime/temporal/` 包含 config/client/worker/workflow/activity/contract，`scripts/temporal-worker.ts` 提供显式启动入口，但默认 `dev` / `start` 仍不切换。
-- Temporal 启动边界已入仓：`startTemporalWorkflowRun` / `startTemporalWorkflowRunWithClient` 统一 workflowId、taskQueue、run input 校验和 client 注入，仍不接管现有 BullMQ 链路。
-- `GraphRun` read model 已具备 Temporal execution metadata：`temporalWorkflowId`、`temporalFirstExecutionRunId`、`temporalTaskQueue`，并由 `recordTemporalWorkflowStart` 显式写入。
-- Temporal launch bridge 已入仓：`launchTemporalWorkflowRun` 串联启动与 `GraphRun` metadata 投影。
-- Task execution launcher boundary 已入仓：`src/lib/task/execution-launcher.ts` 让 `submitTask` 通过 `launchTaskExecution` 启动执行；默认仍走 BullMQ，显式 `TASK_EXECUTION_RUNTIME=temporal_run_task` 只支持 `story_to_script_run` / `script_to_storyboard_run` 并调用 `launchTemporalWorkflowRun`。
-- Temporal run cancel API 已接入：`requestManagedRunCancel` 会在 run 带有 `temporalWorkflowId + temporalFirstExecutionRunId` 时调用 `cancelTemporalWorkflowRun`，legacy linked task 仍保留 `cancelTask` 路径。
-- Temporal run lifecycle read-model 投影已入仓：`recordTemporalRunLifecycleEvent` 生成 `GraphEvent.idempotencyKey` 并写入低频 lifecycle 事件，`recordWorkflowStarted` / `recordWorkflowCompleted` Activity 会投影 `run.start` / `run.complete`。
-- Temporal lifecycle publish boundary 已入仓：`publishTemporalRunLifecycleEvent` 复用同一幂等 `RunEventInput` 后调用 `publishRunEvent`，Temporal Activities 现在会把低频 run/step lifecycle 发布为 Redis `run.event`。
-- Temporal smoke workflow 已形成最小 run + step read-model 生命周期闭环：`run.start -> step.start -> step.complete -> run.complete`，返回的 `TemporalWorkflowRunResult` contract 保持不变。
-- Temporal step lifecycle 已具备通用 descriptor boundary：step Activities 可接受 `TemporalWorkflowStepDescriptor`，payload 会携带 `stepKey`、`stepTitle`、`stepIndex`、`stepTotal`、`stepAttempt`，未传时默认 smoke step。
-- Temporal failure lifecycle projection boundary 已接入 run-task 业务链路：`recordWorkflowStepFailed` / `recordWorkflowFailed` 可显式写入 `step.error` / `run.error`，payload contract 固定 `errorCode`、`message` / `errorMessage` 和可选 `retryable`。
-- Temporal run-centric text task wrapper workflow 已入仓：`runTaskWorkflow` / `executeRunCentricTask` 支持 `story_to_script_run` 与 `script_to_storyboard_run`，通过 `TaskExecutionContext` 复用 worker lifecycle，以持久化 `Task.status=completed` 作为 workflow 成功条件，并在执行 Activity 失败后投影 `step.error` / `run.error` 后 rethrow 原错误。
-- Worker task lifecycle context boundary 已入仓：`src/lib/workers/shared.ts` 暴露 `TaskExecutionContext` / `withTaskLifecycleContext` / `reportTaskProgressContext`，BullMQ worker 入口继续通过 `withTaskLifecycle(job, handler)` adapter 兼容。
-- Run-centric text handler context boundary 已入仓：`story_to_script_run` / `script_to_storyboard_run` 已有 context-native handler；Temporal `runTextTaskHandlerWithContext` 直接 dispatch context handler，不再创建 fake legacy Job。
-- `GraphEvent` 已支持可选 `idempotencyKey` 唯一键；携带幂等键调用 `appendRunEventWithSeq` 时重复写入会返回已有事件，不重复追加。
-- 媒体存储链路已统一到 storage key / signed URL 归一化，MinIO / S3 兼容路径与 `/m/*` 媒体路由均有服务端处理入口。
-- `next-intl` 中英双语界面、App Router 页面和 API 路由契约已经形成，并配套 guard / test matrix。
-- 2026-04-10 的 `20260410-project-optimization-epic` 已完成，`api-config`、LLM / provider adapter、worker runtime、前端热点和 persistence 边界已完成第一轮职责拆分并通过最终验收。
+- 既有小说 / 剧本 / 分镜 / 配音 / 视频 workflow、BullMQ workers、watchdog、bull-board、graph run runtime、provider model config、media storage 和中英双语 App Router/API 契约已经形成。
+- Temporal 基础边界已入仓：SDK/worker 显式入口、start/launch bridge、GraphRun metadata、run/step lifecycle read-model + Redis publish、failure projection、cancel API、run-task wrapper、task lifecycle context、text handler context、run-task contract。
+- 架构复核结论已入仓：`docs/workflow-architecture-decision.md` 选择 Temporal durable kernel + Redis/SSE 高频事件 + 可选 LangGraph Activity 子图；PG 替换不纳入当前切流。
+- Visual workflow builder child #1 完成：`WorkflowCanvasDefinition`、node catalog、validator、graph/connectivity 校验、compiler、内置 definitions 和 registry 编译桥。
+- Visual workflow builder child #2 完成：`WorkflowDefinition` / `WorkflowDefinitionVersion` Prisma models、migration、`definition-store`、项目级 `/api/projects/[projectId]/workflows/**` 草稿/发布 API 和 contract tests。
+- Visual workflow builder child #3 完成：`/workspace/[projectId]/workflows` DSL-first UI shell、query hooks、`canvas-editor`、节点 palette、顺序 preview、inspector、validation panel、保存草稿和发布控件。
+- Visual workflow builder child #4 完成：`getProjectPublishedWorkflowDefinitionVersion`、`PublishedWorkflowExecutionPlan` types、`buildPublishedWorkflowExecutionPlan`、`getProjectPublishedWorkflowExecutionPlan`、`assertPublishedWorkflowExecutionPlanExecutable`；published version 可编译成 Temporal step descriptors，并显式报告 unsupported nodes。
+- Visual workflow builder child #5 完成：新增 `runtime.smoke` 可执行节点、published workflow execute service/API、Temporal smoke plan step descriptors、UI Run 控件和单测/contract 覆盖；已发布的 smoke workflow 可创建 run 并启动 Temporal smoke。
+- Visual workflow builder child #6 完成：引入 `@xyflow/react`，将线性 preview 替换为真实 React Flow 画布；拖拽位置、连线、删边/删节点通过 `canvas-editor` helper 回写 `WorkflowCanvasDefinition`，不持久化 React Flow 私有状态。
+- Visual workflow builder child #7 完成：新增 catalog-driven node config schema、默认 config helper、DSL config 校验和通用 Inspector 表单；配置字段真值在 `node-config-catalog.ts` / `WorkflowNodeTypeRegistration.configSchema`。
+- Visual workflow builder child #8 完成：新增 dedicated `publishedWorkflow` Temporal workflow、`executePublishedWorkflowStep` Activity、runtime executor registry、deterministic `data.transform` 支持，将 `input.user` 接为真实执行 step，将 `artifact.persist` 接入 run-runtime `GraphArtifact` 幂等 upsert，将 `llm.transform` / `llm.analysis` 接入现有模型配置、AI runtime 和同步文本计费边界，并将 `media.generate(image|video|audio)` 接入 provider/storage/billing/cache 与外部任务 checkpoint 边界；`runtime.smoke`、`input.user`、`data.transform`、`artifact.persist`、`llm.transform`、`llm.analysis` 与 `media.generate(image|video|audio)` 当前可执行。
+- Visual workflow builder child #9 / final audit 完成：builder execute 改用 `usePublishedWorkflowRunStream`，published workflow queued/running `runId` 通过 shared run-stream 读取 `/api/runs/:runId/events`，`WorkflowRunStatePanel` 展示 run id、run 状态、进度、ordered step 状态、错误与输出摘要。
+- Production bible foundation 完成：新增 `src/lib/production-bible/` 严格 schema、语义校验、节点输出解析和提示词构造；新增 `story.extractBible`、`story.planEpisodes`、`scene.breakdown`、`shot.plan`、`human.review` 节点；published workflow runtime 通过现有 LLM Activity/model/billing/cache 边界执行前四个 production 节点，并严格解析为 production-prep 结构；`human.review` 产出显式 review checkpoint。
+- 兼容冗余清理完成：删除 production/published workflow runtime 中无调用的支持判断 helper 和 `workflow-engine/node-types.ts` 转发壳；直接依赖读取收敛到 `published-workflow-step-context.ts`，仍保持缺失依赖显式失败。
+- 全仓旧兼容清理当前切片完成：删除无引用旧脚本/dev routes/workspaceRedesign 文案/旧 generator alias/`LegacyMediaRefBackup`；收紧 `novel-promotion panel PATCH` 为 `panelId` 唯一路径；移除 logging 旧签名 overload、`ProjectAuthContext` alias、`customPricing.input/output` 旧价格结构和对应迁移入口。
 
 ## 进行中 / 未完成
-- `README.md` 明确项目仍处测试初期，功能和稳定性持续快速迭代中，版本升级时数据库兼容策略尚未稳定。
-- `docs/project-workflow-refactor-analysis.md` 记录长期方向：Temporal 做 durable workflow kernel、LangGraph 做可选 Agent 子引擎、未来 PG 替换 MySQL；当前已完成 Temporal 运行时、启动、metadata、lifecycle 投影与发布、run cancel API 接入、failure boundary、smoke run+step 生命周期闭环、run-task failure projection、run-centric text task wrapper、task execution launcher boundary、task lifecycle context boundary 和 run-centric text handler context boundary；`submitTask` 默认调度仍走 BullMQ。
-- `.gitignore` 已收敛本地任务状态和生成物噪音：新 `.codex-tasks/`、`.tmp/`、测试/浏览器报告、本地 Temporalite/SQLite 数据、缓存和 env 变体默认忽略；正式源码、测试、migrations、`docs/`、`AGENTS.md` 不忽略。
-- 仓库尚无独立 `docs/specs` 文档体系；当前真值仍集中在代码、README、standards、guards 和 `tests/contracts/`。
-- 当前 `.codex-tasks/20260410-project-optimization-epic/` 已收尾，仓库里未发现处于打开状态的已跟踪开发子任务。
+- `submitTask` 默认仍走 BullMQ；Temporal 只在显式 `TASK_EXECUTION_RUNTIME=temporal_run_task` 且支持 task type 时使用。
+- 用户发布的 visual workflow 已接入 dedicated published runtime；LLM 文本节点、`media.generate(image|video|audio)` 和 production-prep 节点已接入 real Activities。当前 visual workflow child deliverables #1-#9 与 production-bible foundation 均完成。
+- `.codex-tasks/20260526-visual-workflow-builder-epic/` final validation 已通过；当前目标范围内已能 UI 创建/连接/配置/校验/发布/执行并观察 run/step 状态。
+- README 仍标注项目处于测试初期，数据库兼容和升级策略仍在快速迭代。
+- 仓库当前有大量未提交/未跟踪改动来自本轮 visual workflow/Temporal 工作；不要清理无关 `.serena/` 或他人改动。
 
-## 关键决策（仍有效）
-- API 路由默认采用 `apiHandler` + 显式鉴权，保持 HTTP 壳与业务实现分层。
-- 模型 capability / pricing 的唯一真值来自 `standards/*` 和 `src/lib/model-config-contract.ts`，禁止在业务代码里硬编码替代。
-- 任务目标状态通过 query / SSE / run-runtime 统一管理，不通过 polling 或局部镜像状态兜底。
-- 多步骤协作默认记录在 `.codex-tasks/`；`AGENTS.md` 是唯一 canonical 规则文件。
-- Temporal 迁移采用分阶段策略：先建立 SDK/runtime/start contract，再迁移单个业务 workflow；在计费 Saga、read model 投影、SSE 和 artifact 幂等边界完整前，不删除 BullMQ/run-runtime。
-- Temporal start result 必须先经过 `recordTemporalWorkflowStart` 投影到 `GraphRun`，再考虑业务 workflow 切流；不要在 API route 或 submitter 中临时散写 Temporal metadata。
-- 业务 workflow 后续切流时优先调用 `launchTemporalWorkflowRun`，保持启动和 metadata 投影顺序一致；记录失败应显式暴露，不作为成功启动静默吞掉。
-- `submitTask` 不应直接 import/call `addTaskJob`；执行启动统一走 `launchTaskExecution`。Temporal run-task 切流必须显式配置 `TASK_EXECUTION_RUNTIME=temporal_run_task`，不支持的 task type 要显式失败，不允许回退 BullMQ。
-- Temporal run-centric text task 先采用 wrapper strangler 方案：workflow 只调 Activity，Activity 内使用 `withTaskLifecycleContext`，再经 `text-task-router.ts` dispatch context-native handler；不要在 workflow deterministic 代码里访问 DB、worker lifecycle 或 provider。
-- Temporal run-task Activity 不应 import BullMQ `Job` 或创建 fake BullMQ job；需要任务生命周期时构造 `TaskExecutionContext`，BullMQ 兼容 adapter 只保留在 worker handler 的 Job 入口。
-- `runTextTaskHandlerWithContext` 只允许显式登记的 context-native text handler；当前支持 `story_to_script_run` / `script_to_storyboard_run`，其它 task type 要显式失败，不得自动构造 legacy Job。
-- run cancel API 接入 Temporal 时必须走 `requestManagedRunCancel`；有 Temporal metadata 时必须同时提供 `temporalWorkflowId` 和 `temporalFirstExecutionRunId` 以绑定 execution chain，terminal run 不触发外部取消副作用。
-- Temporal Activity 写低频 read model lifecycle 时使用 `recordTemporalRunLifecycleEvent`；不要把 `step.chunk` 这类高频流式事件混入该入口。
-- Temporal Activity 需要前端实时可见的低频 lifecycle 时使用 `publishTemporalRunLifecycleEvent`；Redis publish 失败必须显式暴露，不做静默降级。
-- Temporal step projection payload 必须包含 `stepTitle`、`stepIndex`、`stepTotal`，并传入稳定 `stepKey` / `attempt`，以满足 `GraphStep` 和 `GraphStepAttempt` 投影。
-- 业务 workflow 后续调用 step lifecycle Activity 时应显式传 `TemporalWorkflowStepDescriptor`；不要依赖 smoke 默认 descriptor。
-- Temporal failure projection payload 必须显式携带顶层 `errorCode` 与 `message` / `errorMessage`；不要传 raw `Error` 或依赖隐式 fallback 生成失败展示字段。
-- Temporal completion projection 应在 workflow result 构造后执行；投影失败要显式暴露，不把 workflow 标记为成功。
+## 关键决策
+- API route 默认是 `apiHandler` + 显式鉴权 + 薄协议壳；业务逻辑进 `src/lib/**`。
+- 模型 capability / pricing 真值来自 `standards/*` 和 `src/lib/model-config-contract.ts`，禁止业务代码复制硬编码。
+- 任务目标状态通过 query / SSE / run-runtime 管理，不引入 polling 或组件局部镜像状态。
+- 可视化 workflow 采用 UI-agnostic DSL + node catalog + validator + compiler；React Flow 只能做编辑体验，不能成为后端真值。
+- React Flow 画布是 `WorkflowCanvasDefinition` 的 UI 投影；新增画布交互必须回写 DSL helper，不允许保存 React Flow viewport/nodes/edges 为后端真值。
+- workflow draft 可保存静态校验失败的合法 DSL；publish 必须重新校验通过并创建不可变递增版本。
+- runtime adapter 只能消费 published `WorkflowDefinitionVersion`，不能执行 draft、React Flow state 或 UI 局部状态。
+- workflow builder 运行状态必须复用 `usePublishedWorkflowRunStream`、shared run-stream executor 和 run-runtime events/read-model；不要在 builder 里新增第二套 polling/state mirror。
+- node config schema 是 catalog/DSL 边界的一部分；Inspector 只做 schema renderer，validator 负责发布前校验，provider secret 不允许进入 workflow definition。
+- Temporal published workflow execution launch 前必须检查 `assertPublishedWorkflowExecutionPlanExecutable`，unsupported nodes 必须显式失败，不允许 no-op、mock success 或 BullMQ fallback。
+- Temporal published workflow 使用 `TEMPORAL_WORKFLOW_TYPE.PUBLISHED_WORKFLOW`，通过 `executePublishedWorkflowStep` Activity 执行显式支持的节点；支持判断和 dispatch 都来自同一个 executor registry。
+- `runtime.smoke`、`input.user`、`data.transform`、`artifact.persist`、`llm.transform`、`llm.analysis` 与 `media.generate(image|video|audio)` 是当前可执行的 visual workflow 节点。
+- `story.extractBible`、`story.planEpisodes`、`scene.breakdown`、`shot.plan` 和 `human.review` 是当前可执行的 production-prep visual workflow 节点；前四个复用 LLM Activity/model/billing/cache 后严格解析为 production-bible schema，`human.review` 只记录 checkpoint，不伪造已审批。
+- Published workflow execute API 接受结构化 execution input；`input.user` Activity 读取 `config.outputKey`，缺少输入时显式失败，不做空值 fallback 或 mock output。
+- `artifact.persist` Activity 只把直接依赖 step 的 `artifactPayload` 通过 run-runtime `createArtifact` 幂等写入 `GraphArtifact`；它不是媒体资产入库，不处理 storage key、signed URL、provider output 或计费。
+- `llm.transform` / `llm.analysis` Activity 只保存 instruction/outputFormat/temperature 等非 secret 配置；模型从项目/用户 `analysisModel` 解析，provider key 仍通过既有 `api-config` 边界读取；调用走 `executeAiTextStep`，计费走 `withTextBilling`，成功结果缓存为 `workflow.llm.result` GraphArtifact。
+- `media.generate(image)` Activity 只保存 prompt/mediaKind/imageModelSlot/aspectRatio 等非 secret 配置；模型从项目/用户 image model slot 解析，provider key 仍通过既有配置边界读取；调用走 `generateImage`，计费走 `withImageBilling`，存储走 `processMediaResult` + `ensureMediaObjectFromStorageKey`，成功结果缓存为 `workflow.media.result` GraphArtifact。async/externalId 通过 `workflow.media.external-job` checkpoint 恢复，避免 retry 重复提交外部媒体任务。
+- `media.generate(video)` Activity 通过项目 `videoModel` 解析模型，源图只允许直接上游 `media.generate(image)` 产物，调用走 `generateVideo`，计费走 `withVideoBilling` 并提取 `actualVideoTokens`，存储走 `processMediaResult(type='video')` + `ensureMediaObjectFromStorageKey`；planner 会在 launch 前拒绝没有直接 image media 依赖的视频节点。
+- `media.generate(audio)` Activity 通过项目 `audioModel` 解析模型，文本来自节点 prompt 加直接依赖上下文，节点 config 必须显式提供 `audioVoice`，可配置 `audioRate` 和 `audioMaxFreezeSeconds`；调用走 `generateAudio`，计费走 `withVoiceBilling` 并提取 `actualDurationSeconds` / `actualSeconds`，存储走 `processMediaResult(type='audio')` + `ensureMediaObjectFromStorageKey`。
+- workflow shared node type contract 在 `src/lib/workflow-contract/node-types.ts`；不要让 `workflow-engine` 与 `workflow-runtime` 互相引用。
+- Published visual workflow Activity context 当前只传直接 `dependsOn` 结果；未来如需任意上游变量引用，先显式扩展 DSL/data-scope contract。
+- Published workflow 直接依赖读取统一走 `src/lib/workflow-runtime/temporal/published-workflow-step-context.ts`；不要在 LLM、media、production、artifact 或 workflow loop 中复制缺失依赖检查。
+- 新增 workflow node type 先进入 `node-catalog.ts`，再接 UI palette、validator、runtime adapter；不要复制节点能力、端口或默认 runtime 语义。
+- canvas compiler 必须保留跨非 step 节点的真实 step 依赖；validator 必须拒绝 cycle、断开节点岛、缺 trigger/output、错误端口和重复 step key。
+- Temporal 迁移继续 strangler：保留 BullMQ/run-runtime，逐步迁移单个业务 workflow；在 billing Saga、artifact 幂等、read model、SSE、cancel/retry 闭环前不删除旧链路。
 
-## 仍需注意的坑点
-- 首次本地启动前跳过 `npx prisma db push` 会直接触发缺表错误。
-- `tsx --env-file=.env` 链路广泛存在；没有 `.env` 或环境变量不全会阻断本地验证。
-- 本地基础设施使用非标准端口映射；需要以 `.env.example` / `docker-compose.yml` 为准，不要手工猜端口。
-- `.dockerignore` 不会把 Markdown / tests / docs 打进镜像；容器内不应作为协作文档真值来源。
-- Temporal worker 需要单独启动 `npm run dev:temporal-worker` 或 `npm run start:temporal-worker`；当前默认 `npm run dev` / `npm run start` 仍只启动既有 BullMQ/watchdog/bull-board 链路。
-- DB-backed integration tests 需要 Docker 可用；`BILLING_TEST_BOOTSTRAP=1` 会调用 `docker compose -f docker-compose.test.yml down -v --remove-orphans`，会清掉同一 compose project 下的本地 MySQL/Redis/MinIO，跑完后需要按需重启 `docker compose up mysql redis minio -d`。
+## 坑点
+- 首次本地启动前必须 `npx prisma db push`，否则会缺表。
+- 大量 `tsx --env-file=.env` 脚本依赖 `.env`。
+- 本地端口以 `.env.example` / `docker-compose.yml` 为准：MySQL `13306`、Redis `16379`、MinIO `19000`。
+- Temporal worker 不随默认 `npm run dev` / `npm run start` 启动，需要 `npm run dev:temporal-worker` 或 `npm run start:temporal-worker`。
+- DB-backed integration tests 可能通过 `docker-compose.test.yml down -v --remove-orphans` 清掉本地服务，跑完要按需重启基础设施。
+- `.dockerignore` 排除 Markdown / tests / docs / AGENTS；容器内不是协作文档真值。
 
 ## 最近活跃窗口
-- 2026-05-06：完成 `20260506-task-launcher-boundary`，新增 `src/lib/task/execution-launcher.ts`，`submitTask` 改为通过 launcher 启动执行；默认 BullMQ 不变，显式 `TASK_EXECUTION_RUNTIME=temporal_run_task` 可启动已支持的 run-centric text workflow。`execution-launcher` / `submitter-launcher` 单测、DB-backed submitter 回归、`typecheck`、`check:file-line-count`、`test:guards` 通过。
-- 2026-05-06：完成 `20260506-temporal-task-context`，新增 `TaskExecutionContext` lifecycle boundary；Temporal run-task Activity 不再 import BullMQ `Job` 或创建 `createTemporalTaskJob`，BullMQ workers 仍通过 adapter 兼容。Temporal activity、worker shared、launcher / submitter 单测、`typecheck`、`check:file-line-count`、`test:guards` 通过。
-- 2026-05-06：完成 `20260506-run-text-handler-context`，`story_to_script_run` / `script_to_storyboard_run` 迁到 context-native handler，`llm-stream` 和 progress / stream helper 提供 context 入口，BullMQ handler 保持 adapter。相关 worker / Temporal / launcher 单测、`typecheck`、`check:file-line-count`、`test:guards` 通过。
-- 2026-05-06：完成 `20260506-run-task-failure-projection`，`runTaskWorkflow` 在 `executeRunCentricTask` 失败后投影固定 `run_task.execute` 的 `step.error` 与 `run.error`，再 rethrow 原业务错误；workflow 单测、相关 Temporal / worker / launcher 单测、`typecheck`、`check:file-line-count`、`test:guards` 通过。
-- 2026-05-03：完成 `20260502-temporal-run-task-workflow`，新增 `runTaskWorkflow` / `executeRunCentricTask`，Temporal worker 现在可执行真实 run-centric text task wrapper；默认 `submitTask` 仍未切流。定向 Temporal 测试、`typecheck`、`check:file-line-count`、`check:changed-test-impact`、`test:guards` 和 Temporal 全量单测通过。
-- 2026-05-02：完成 `20260502-temporal-run-cancel-api`，`/api/runs/[runId]/cancel` 改为薄 route + `requestManagedRunCancel` 协调器；Temporal-backed run 调用 `cancelTemporalWorkflowRun`，legacy linked task 仍调用 `cancelTask`，`run.canceled` 使用幂等键；定向测试、`typecheck`、`check:file-line-count`、`test:guards` 通过。
-- 2026-05-02：完成 `20260502-temporal-step-descriptor-gitignore`，`.gitignore` 忽略本地 task state / 临时产物 / 测试报告 / 本地 Temporalite 数据等噪音；新增 `TemporalWorkflowStepDescriptor`，step payload builders 和 Activities 支持通用 step descriptor；Temporal 定向单测、`typecheck`、`check:file-line-count` 通过。
-- 2026-05-02：完成 `20260502-temporal-lifecycle-publish-boundary`，新增 `publishTemporalRunLifecycleEvent` 并让 Temporal Activities 通过 `publishRunEvent` 发布低频 `run.event`；Temporal 定向单测、`typecheck`、`check:file-line-count` 通过，未接入业务链路。
-- 2026-05-02：完成 `20260503-temporal-failure-projection`，新增 Temporal run/step failure payload contract 与 `recordWorkflowStepFailed` / `recordWorkflowFailed` Activity；Temporal 定向单测、`typecheck`、`check:file-line-count` 通过，未接入业务链路。
-- 2026-05-03：完成 `20260502-temporal-smoke-step-lifecycle`，`smokeWorkflow` 现在写 `run.start -> step.start -> step.complete -> run.complete`，新增固定 smoke step contract 和 step payload builders；Temporal 定向单测、`typecheck`、`check:file-line-count` 通过。
-- 2026-05-02：完成 `20260502-temporal-smoke-completion`，`smokeWorkflow` 现在写 `run.start -> run.complete`，新增 `recordWorkflowCompleted` Activity 和 completion payload contract；Temporal 定向单测、`typecheck`、`check:file-line-count` 通过。
-- 2026-05-02：完成 `20260502-temporal-cancel-boundary`，新增 `cancelTemporalWorkflowRun` / `cancelTemporalWorkflowRunWithClient` 和 `tests/unit/workflow-runtime/temporal-cancel.test.ts`；定向 Temporal 单测、`typecheck`、`check:file-line-count` 通过，未接入现有 API/worker。
-- 2026-05-02：完成 `20260502-temporal-run-lifecycle-events`，`GraphEvent.idempotencyKey`、幂等 `appendRunEventWithSeq`、`recordTemporalRunLifecycleEvent` 和 `recordWorkflowStarted` run.start 投影入仓；定向单测、`npx prisma generate`、`typecheck`、`check:file-line-count` 通过。
-- 2026-05-01：完成 `20260501-temporal-launch-bridge`，新增 `launchTemporalWorkflowRun` 与 `tests/unit/workflow-runtime/temporal-launch.test.ts`，验证启动后记录、记录失败暴露、启动失败不记录。
-- 2026-05-01：完成 `20260501-temporal-run-metadata`，`GraphRun` 增加 Temporal metadata 与 migration，`recordTemporalWorkflowStart` 和 `tests/unit/run-runtime/temporal-metadata.test.ts` 入仓，定向单测、`typecheck`、`check:file-line-count` 通过。
-- 2026-05-01：完成 `20260501-temporal-start-boundary`，新增 `src/lib/workflow-runtime/temporal/starter.ts` 与 `tests/unit/workflow-runtime/temporal-starter.test.ts`，定向 Temporal 测试、`typecheck` 和 `check:file-line-count` 通过。
-- 2026-05-01：完成 `20260501-temporal-workflow-kernel` 第一阶段，Temporal SDK 依赖、显式 worker 脚本、最小 workflow/activity 和基础 contract 测试入仓。
-- 2026-04-10：完成 `20260410-project-optimization-epic` 收尾，`npm run test:guards` 与 `npm run check:file-line-count` 通过。
-- 2026-04-10：`src/app/api/user/api-config/route.ts` 拆成 route / service / domain / persistence 边界，`check:model-config-contract` 与 `test:behavior:api` 通过。
-- 2026-04-10：LLM / provider adapter 拆分完成，`chat-stream` 收敛为入口编排，`test:integration:provider` 通过。
-- 2026-04-10：worker runtime 和 storyboard pipeline 改为注册表 / 分层结构，`test:integration:task` 通过。
-- 2026-04-10：profile / workspace / shared UI 热点与 config persistence 收敛完成，`check:config-center-guards` 与 repo 级 file-line-count 守卫恢复全绿。
+- 2026-05-27：完成 child #8 Business node runtime Activities。新增 dedicated `publishedWorkflow`、`executePublishedWorkflowStep` Activity、published node executor registry、`data.transform`、structured `input.user`、`artifact.persist`、`llm.transform` / `llm.analysis`、`media.generate(image)`、async external-job checkpoint/resume、`media.generate(video)` 和 `media.generate(audio)`。audio 独立走 `audioModel`、`audioVoice`、`audioRate`、`audioMaxFreezeSeconds`、`generateAudio`、`withVoiceBilling(actualDurationSeconds/actualSeconds)`、`processMediaResult(type='audio')`。目标 workflow-engine/runtime/API/UI/billing 测试 9 files / 100 tests、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check` 通过。
+- 2026-05-27：完成全仓旧兼容/冗余清理当前切片。删除旧一次性脚本、dev routes、workspaceRedesign 文案、旧 generator alias、`LegacyMediaRefBackup`、`customPricing.input/output` 迁移入口；logging 和 project action 日志只保留 canonical signature；`novel-promotion panel PATCH` 只接受 `panelId`。验证：API/worker/user-api-config/generator 定向测试、Prisma validate、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check` 通过。
+- 2026-05-27：完成 production-bible foundation。新增影视前期准备资产 contract、production 节点 catalog/config/runtime、严格 LLM 输出解析、架构文档和单测。验证：production-bible/workflow-engine/runtime 定向 4 files / 50 tests、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check` 通过。
+- 2026-05-27：完成兼容冗余清理。删除 `isProductionWorkflowNodeType` / `PRODUCTION_NODE_TYPES` / `isTemporalPublishedWorkflowNodeSupported` 和 `workflow-engine/node-types.ts` 转发壳；新增 `published-workflow-step-context.ts` 统一直接依赖读取。验证：production-bible/workflow-engine/runtime 定向 5 files / 66 tests、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check` 通过。
+- 2026-05-27：完成 final run observability / epic audit。`WorkflowBuilderShell` 执行 published workflow 后通过 `usePublishedWorkflowRunStream` 观察 `/api/runs/:runId/events`；新增 `WorkflowRunStatePanel` 显示 run/step 状态。验证：run-stream/组件 5 files / 25 tests、workflow matrix 11 files / 107 tests、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check` 通过。
+- 2026-05-27：完成 child #7 Node configuration schema and forms。新增 `node-config-catalog.ts`、`node-config.ts`、`canvas-config-validation.ts` 和 `WorkflowNodeConfigForm.tsx`；目标 canvas 测试、`registry.test.ts`、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check` 通过；浏览器烟测在拦截 API 后渲染 3 nodes / 2 edges，schema-driven `Message` config 可见，console errors 0。`npm run dev` 因本地 MinIO 未启动失败，`dev:next` 期间 MySQL/Redis 未启动错误按真实环境问题保留。
+- 2026-05-27：完成 child #6 React Flow canvas editor。新增 `@xyflow/react`、真实拖拽/连线画布、DSL edge/position helpers 和对应单测；目标 canvas 测试、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check` 通过；浏览器烟测在拦截最小 API 后渲染 2 nodes / 1 edge，console errors 0，React Flow warnings 0。
+- 2026-05-27：完成 child #5 End-to-end smoke workflow。新增 `runtime.smoke`、published workflow execute service/API、Temporal smoke step descriptors 和 UI Run 控件；目标 execution-plan/execution/temporal/route 测试、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check` 通过。
+- 2026-05-27：完成 visual workflow builder child #4 Runtime execution adapter。官方资料复核后继续选择 DSL + catalog + compiler + planner；新增 published-version read service 和 execution plan adapter；目标 workflow-engine 单测、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check` 通过。
+- 2026-05-27：完成 child #3 Canvas UI shell。新增 `/workspace/[projectId]/workflows`、query hooks、`canvas-editor`、palette、preview、inspector、validation panel、save/publish controls 与 zh/en 文案；浏览器 smoke 路由 200，API 401 源于未登录。
+- 2026-05-26：完成 child #2 persistence/API。新增 Prisma models、migration、definition-store、项目级 workflow API、route catalog/tests；目标 service/route 测试、typecheck、guards、Prisma schema validate 通过。
+- 2026-05-26：完成 child #1 definition contract。新增 visual workflow 架构文档、canvas DSL、node catalog、validator/compiler 和 registry bridge；目标单测、typecheck、guards 通过。
+- 2026-05-26：完成 Temporal 架构复核和 run-task contract 收敛；结论继续 Temporal kernel + Redis/SSE + 可选 LangGraph Activity 子图。

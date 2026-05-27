@@ -306,9 +306,3 @@ export class FalVideoGenerator extends BaseVideoGenerator {
         }
     }
 }
-
-// ============================================================
-// 向后兼容别名
-// ============================================================
-
-export const FalBananaGenerator = FalImageGenerator

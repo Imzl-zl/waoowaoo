@@ -59,7 +59,7 @@ export type RunStageView = {
 
 export type UseRunStreamStateOptions<TParams extends Record<string, unknown>> = {
   projectId: string
-  endpoint: (projectId: string) => string
+  endpoint: (projectId: string, params: TParams) => string
   storageKeyPrefix: string
   storageScopeKey?: string
   buildRequestBody: (params: TParams) => Record<string, unknown>

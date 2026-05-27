@@ -99,6 +99,13 @@ export const queryKeys = {
         data: (projectId: string) => ['project', projectId, 'data'] as const,
     },
 
+    // ============ Workflow definitions ============
+    workflowDefinitions: {
+        all: (projectId: string) => ['workflow-definitions', projectId] as const,
+        detail: (projectId: string, workflowType: string) =>
+            ['workflow-definitions', projectId, workflowType] as const,
+    },
+
     // ============ 顶层便捷函数 ============
     /**
      * 项目基础数据

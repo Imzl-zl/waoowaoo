@@ -28,8 +28,26 @@
 - 守卫矩阵：`npm run test:guards`、`npm run check:file-line-count`、`npm run check:model-config-contract`、`npm run check:config-center-guards`、`npm run check:test-coverage-guards`
 - 定向验证：`npm run test:behavior:api`、`npm run test:integration:provider`、`npm run test:integration:task`、`npm run test:billing:integration`
 - 关键入口路径：`src/lib/storage/init.ts`、`src/lib/workers/index.ts`、`scripts/watchdog.ts`、`scripts/bull-board.ts`、`src/lib/run-runtime/service.ts`、`src/lib/workflow-engine/registry.ts`
+- Visual workflow builder 架构复核：`docs/visual-workflow-builder-architecture.md`；当前选择是 UI-agnostic `WorkflowCanvasDefinition` + node catalog + validator + compiler，React Flow 只作为后续画布编辑器层。
+- Workflow canvas 定义层入口：`src/lib/workflow-engine/canvas-types.ts`、`node-catalog.ts`、`canvas-validation.ts`、`canvas-compiler.ts`、`builtin-definitions.ts`；`registry.ts` 当前从内置 canvas definitions 编译回既有 `WorkflowDefinition`。
+- Workflow definition 持久化入口：`src/lib/workflow-engine/definition-store.ts`；项目级 API 是 `src/app/api/projects/[projectId]/workflows/**`，支持草稿保存和发布版本创建。
+- Workflow published definition 读取入口：`src/lib/workflow-engine/definition-store.ts` 的 `getProjectPublishedWorkflowDefinitionVersion`，只返回当前用户/项目/workflowType 匹配的不可变发布版本。
+- Workflow execution plan adapter 入口：`src/lib/workflow-engine/published-definition-execution-plan.ts`；它消费 published version，输出 `PublishedWorkflowExecutionPlan`、Temporal step descriptors 和显式 unsupported diagnostics，当前不切生产 runtime。
+- Workflow published execution 入口：`src/lib/workflow-engine/published-workflow-execution.ts` 和 `src/app/api/projects/[projectId]/workflows/[workflowType]/execute/route.ts`；只执行已发布且 plan 可执行的定义，启动 `TEMPORAL_WORKFLOW_TYPE.PUBLISHED_WORKFLOW` 并写入 run metadata / launch failure。
+- Workflow builder UI 入口：`src/app/[locale]/workspace/[projectId]/workflows/`；查询层是 `src/lib/query/hooks/useWorkflowDefinitions.ts`，编辑 helper 是 `src/lib/workflow-engine/canvas-editor.ts`，画布层使用 `@xyflow/react`，但保存/发布/运行时只消费 `WorkflowCanvasDefinition`。
+- Workflow run input UI 入口：`src/app/[locale]/workspace/[projectId]/workflows/components/WorkflowRunInputPanel.tsx`；只从 `input.user.config.outputKey` / step key / node id 派生本次运行输入，不写回 `WorkflowCanvasDefinition`。
+- Workflow builder run state 入口：`src/lib/query/hooks/usePublishedWorkflowRunStream.ts` + `src/app/[locale]/workspace/[projectId]/workflows/components/WorkflowRunStatePanel.tsx`；published workflow execute 返回 queued/running `runId` 后复用 shared run-stream executor 读取 `/api/runs/:runId/events`，不要在 builder 里新增第二套 runtime 状态机。
+- React Flow canvas 组件入口：`src/app/[locale]/workspace/[projectId]/workflows/components/WorkflowCanvasPreview.tsx`；它把 DSL 投影成 React Flow nodes/edges，并把拖拽、连线、删边/删节点回写为 DSL helper 调用。
+- Workflow node config schema 入口：`src/lib/workflow-engine/node-config-catalog.ts` 保存字段 schema，`node-config.ts` 生成默认 config，`canvas-config-validation.ts` 校验 `nodes[].config`，`WorkflowNodeConfigForm.tsx` 按 schema 渲染 Inspector 控件。
+- Production bible foundation 入口：`src/lib/production-bible/` 保存影视前期准备资产 schema、严格解析、语义校验、节点输出解析和 production 节点提示词；架构文档是 `docs/production-bible-workflow-architecture.md`。
+- Workflow shared node type contract：`src/lib/workflow-contract/node-types.ts`；engine catalog 和 runtime executor 都依赖这个轻量 contract，不要让 `workflow-engine` 与 `workflow-runtime` 互相引用。
+- Published workflow runtime support registry：`src/lib/workflow-runtime/temporal/published-workflow-activities.ts`；`getTemporalPublishedWorkflowNodeSupport({ nodeType, config })` 和 `executePublishedWorkflowStepNode` 必须从同一 executor map 派生，避免 planner 与 Activity dispatch 出现两份支持列表。支持判断可以是 config-aware，例如 `media.generate` 只接受 `image` / `video` / `audio`。
+- Published workflow LLM Activity 入口：`src/lib/workflow-runtime/temporal/published-workflow-llm.ts`；依赖类型在 `published-workflow-activity-dependencies.ts`，默认模型/计费/AI runtime 依赖在 `published-workflow-llm-defaults.ts`，prompt/output 格式化在 `published-workflow-llm-format.ts`，结果缓存走 `published-workflow-llm-cache.ts` 的 `workflow.llm.result` GraphArtifact。
+- Published workflow media Activity 入口：`src/lib/workflow-runtime/temporal/published-workflow-media.ts`；按 `mediaKind` 分发到 image/video/audio handler。image 默认依赖在 `published-workflow-media-defaults.ts`，video 默认依赖在 `published-workflow-media-video-defaults.ts`，audio 默认依赖在 `published-workflow-media-audio-defaults.ts`。结果缓存走 `published-workflow-media-cache.ts` 的 `workflow.media.result`，外部任务 checkpoint 走 `workflow.media.external-job`。
 - Temporal metadata 写入入口：`src/lib/run-runtime/service.ts` 的 `recordTemporalWorkflowStart`
 - Temporal 显式启动+metadata 投影入口：`src/lib/workflow-runtime/temporal/launch.ts` 的 `launchTemporalWorkflowRun`
+- Temporal 架构决策复核：`docs/workflow-architecture-decision.md`；当前路线是 Temporal durable kernel + Redis/SSE 高频事件 + 可选 LangGraph Activity 子图，PG 替换不和当前切流绑定。
+- Temporal run-task contract 入口：`src/lib/workflow-runtime/temporal/run-task-contract.ts` 的 `TEMPORAL_RUN_TASK_TYPES` / `isTemporalRunTaskType` / `TEMPORAL_RUN_TASK_FAILURE_STEP`；launcher、Activity、workflow failure projection 共用这里，不要复制支持列表或 step descriptor。
 - Task execution launcher 入口：`src/lib/task/execution-launcher.ts` 的 `launchTaskExecution`；默认 BullMQ，显式 `TASK_EXECUTION_RUNTIME=temporal_run_task` 时仅支持 `story_to_script_run` / `script_to_storyboard_run` 并启动 `runTaskWorkflow`。
 - Temporal 显式取消入口：`src/lib/workflow-runtime/temporal/cancel.ts` 的 `cancelTemporalWorkflowRun`
 - run cancel 控制面协调入口：`src/lib/run-runtime/cancel.ts` 的 `requestManagedRunCancel`
@@ -48,10 +66,32 @@
 - API route = `apiHandler` + 鉴权 + 薄协议壳；领域逻辑、归一化和持久化放进 `src/lib/**`。
 - 模型配置改动通常需要同时触达 `src/lib/user-api/api-config/*`、`standards/*`、`src/lib/model-config-contract.ts` 与对应 guards / tests，而不是只改其中一处。
 - workflow / task 改动通常横跨 `src/lib/task/*`、`src/lib/workers/*`、`src/lib/run-runtime/*`、`src/lib/workflow-engine/*` 与相应测试目录。
+- 可视化 workflow 后续 UI/API/持久化必须读写项目自有 `WorkflowCanvasDefinition`，不要把 React Flow nodes/edges/viewport 当后端真值。
+- React Flow 只能出现在 UI adapter 层；如果需要保存位置、连线或删除边，先在 `src/lib/workflow-engine/canvas-editor.ts` 增加/复用 DSL helper，再由组件调用。
+- 节点配置字段只从 `node-config-catalog.ts` / `WorkflowNodeTypeRegistration.configSchema` 派生；Inspector、validator、默认值 helper 都读取这份 schema，不要在页面组件里按节点类型复制表单分支。
+- workflow definition 可以保存非 secret 的节点业务配置，但 provider credential、API key、模型密钥等必须继续引用现有用户/provider 配置边界，不能写进 `nodes[].config`。
+- workflow definition 草稿可保存静态校验失败的合法 DSL，但发布必须通过 `validateWorkflowCanvasDefinition`；API route 保持薄壳，业务语义在 `definition-store`。
+- workflow builder UI 的保存/发布流必须提交 `WorkflowCanvasDefinition`；发布前先保存当前本地 DSL，避免发布后端旧草稿。
+- workflow builder UI 的执行/观察流必须走 `usePublishedWorkflowRunStream` 和 existing run-runtime events/read-model；不要只显示 `runId`，也不要在组件里新增 polling、server mirror state 或第二套 step 状态。
+- workflow execution planner 只能消费已发布 `WorkflowDefinitionVersion`，不能消费 draft、React Flow state 或组件局部状态。
+- Temporal published workflow adapter 生成执行计划；`assertPublishedWorkflowExecutionPlanExecutable` 必须在 launch 前检查 unsupported diagnostics，不允许 no-op、mock success 或 BullMQ fallback。
+- Published visual workflow execution 当前可执行节点是 `WORKFLOW_NODE_TYPES.RUNTIME_SMOKE`、`WORKFLOW_NODE_TYPES.USER_INPUT`、`WORKFLOW_NODE_TYPES.DATA_TRANSFORM`、`WORKFLOW_NODE_TYPES.ARTIFACT_PERSIST`、`WORKFLOW_NODE_TYPES.LLM_TRANSFORM`、`WORKFLOW_NODE_TYPES.LLM_ANALYSIS`，以及 `WORKFLOW_NODE_TYPES.MEDIA_GENERATE` 的 `mediaKind=image|video|audio` 配置。video 必须直接依赖一个 image media step；audio 使用项目/用户 `audioModel` 和显式 `audioVoice`。
+- Published workflow execute API 接受结构化 execution input；`input.user` Activity 读取 `config.outputKey` 并在缺失时显式失败，不做空值 fallback 或 mock output。
+- `artifact.persist` Activity 只把直接依赖 step 的 `artifactPayload` 通过 run-runtime `createArtifact` 幂等写入 `GraphArtifact`；它不是媒体资产入库，不处理 storage key、signed URL、provider output 或计费。
+- `llm.transform` / `llm.analysis` Activity 只保存 `instruction` / `outputFormat` / `temperature` 等非 secret 节点配置；模型从现有项目/用户 `analysisModel` 配置解析，provider key 仍由 `api-config` 边界读取，不进入 workflow definition。
+- Published workflow LLM Activity 通过 `executeAiTextStep` 调用既有 LLM runtime，并用 `withTextBilling` 包裹同步文本计费；billing key 包含 `runId`、`stepKey` 和 Temporal Activity attempt。成功结果会写 `GraphArtifact` 的 `workflow.llm.result`，命中同一 input fingerprint 时先返回缓存再触发 billing/provider。
+- Published workflow image media Activity 通过项目配置中的 `imageModelSlot` 解析具体模型，能力选项走 `resolveProjectModelCapabilityGenerationOptions`，provider 调用走 `generateImage`，计费走 `withImageBilling`，存储走 `processMediaResult` + `ensureMediaObjectFromStorageKey`。成功结果会写 `GraphArtifact` 的 `workflow.media.result`，命中同一 input fingerprint 时先返回缓存再触发 billing/provider。async `externalId` 会写 `workflow.media.external-job`，Activity retry 只轮询同一外部任务。
+- Published workflow video media Activity 通过项目配置中的 `videoModel` 解析模型，能力选项走 `resolveProjectModelCapabilityGenerationOptions({ modelType: 'video' })`，源图只允许直接上游 `media.generate(image)` 产物，provider 调用走 `generateVideo`，计费走 `withVideoBilling` 并提取 `actualVideoTokens`，存储走 `processMediaResult(type='video')` + `ensureMediaObjectFromStorageKey`。planner 会在 launch 前拒绝没有直接 image media 依赖的视频节点。
+- Published workflow audio media Activity 通过项目配置中的 `audioModel` 解析模型，文本来自节点 `prompt` 加直接依赖上下文，节点 config 必须显式提供 `audioVoice`，可配置 `audioRate` 和 `audioMaxFreezeSeconds`。provider 调用走 `generateAudio`，计费走 `withVoiceBilling` 并提取 `actualDurationSeconds` / `actualSeconds`，存储走 `processMediaResult(type='audio')` + `ensureMediaObjectFromStorageKey`。
+- Published workflow production-prep 节点包括 `story.extractBible`、`story.planEpisodes`、`scene.breakdown`、`shot.plan` 和 `human.review`。前四个复用 existing LLM Activity/model/billing/cache 边界，并将 LLM JSON 严格解析为 production-bible schema 后输出 `{ kind, output, llm }`；`human.review` 只产出 review checkpoint artifact，不伪造已审批状态。
+- Published visual workflow Activity context 只传当前 step 的直接 `dependsOn` 结果，控制 Temporal Event History payload 增长；如果未来要支持“任意上游变量可引用”，先在 DSL / data-scope contract 中显式表达，不要偷传全量历史。
+- 新增 workflow 节点类型先进入 `node-catalog.ts`，再接 UI palette、validator 和 runtime adapter；不要在 UI 或 adapter 内复制节点能力、端口或默认 runtime 语义。
+- canvas compiler 必须保留跨非 step 节点的 step 依赖；校验层必须显式拒绝 cycles 和 disconnected node islands，不靠运行时忽略。
 - Temporal start result 写入现有 run read model 时统一调用 `recordTemporalWorkflowStart`，不要在 API route / submitter / worker handler 里直接散写 `GraphRun` Temporal 字段。
 - 单个业务 workflow 正式切流时优先经 `launchTaskExecution` 路由，再由 Temporal 分支调用 `launchTemporalWorkflowRun` 串联 start 与 metadata 投影；不要在 `submitTask` 中直接写 runtime 分支或直接调用 `addTaskJob`。
 - `TASK_EXECUTION_RUNTIME` 只接受 `bullmq` / `temporal_run_task`；默认空值为 `bullmq`。Temporal runtime 不支持的 task type 必须显式失败，不做 BullMQ fallback。
 - Temporal run-task wrapper 不写额外 smoke lifecycle；成功以持久化 `Task.status=completed` 为准，`failed` / `canceled` / `dismissed` 转 non-retryable `TASK_TERMINAL_FAILURE`。
+- Temporal run-task 支持任务类型和 failure projection step descriptor 只能从 `run-task-contract.ts` 读取；新增支持类型时同步 contract、context handler、launcher / Activity / workflow 单测。
 - Temporal run-task Activity 不直接 import BullMQ `Job`、不创建 fake job shell；Activity 构造 `TaskExecutionContext`，再由 `runTextTaskHandlerWithContext` dispatch context-native handler。
 - `runTextTaskHandlerWithContext` 只 dispatch `TEXT_TASK_CONTEXT_HANDLERS` 中显式登记的任务类型；不支持时抛 `Unsupported context text task type`，不要回退 legacy Job handler。
 - run cancel API 通过 `requestManagedRunCancel` 接入 Temporal cancellation；有 Temporal metadata 时必须调用 `cancelTemporalWorkflowRun` 并同时传入 `temporalWorkflowId` 与 `temporalFirstExecutionRunId`，legacy linked task 仍走 `cancelTask`。

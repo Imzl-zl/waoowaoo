@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { calcText, calcVideo, calcVoice } from '@/lib/billing/cost'
+import { calcText, calcVideo, calcVideoByTokens, calcVoice } from '@/lib/billing/cost'
 import type { TaskBillingInfo } from '@/lib/task/types'
 
 const ledgerMock = vi.hoisted(() => ({
@@ -26,6 +26,7 @@ import {
   rollbackTaskBilling,
   settleTaskBilling,
   withTextBilling,
+  withVideoBilling,
   withVoiceBilling,
 } from '@/lib/billing/service'
 
@@ -146,6 +147,49 @@ describe('billing/service', () => {
     ).rejects.toBeInstanceOf(InsufficientBalanceError)
 
     expect(ledgerMock.rollbackFreeze).toHaveBeenCalledWith('freeze_voice_low_balance')
+  })
+
+  it('charges sync video billing from actual video tokens when provider returns exact usage', async () => {
+    modeMock.getBillingMode.mockResolvedValue('ENFORCE')
+    ledgerMock.freezeBalance.mockResolvedValue('freeze_video_actual_tokens')
+
+    await withVideoBilling(
+      'u1',
+      'doubao-seedance-2-0-260128',
+      '720p',
+      1,
+      {
+        projectId: 'p1',
+        action: 'published_workflow_media_generate_video',
+        metadata: {
+          resolution: '720p',
+          duration: 5,
+          aspectRatio: '16:9',
+          containsVideoInput: false,
+        },
+      },
+      async () => ({ actualVideoTokens: 120_000 }),
+    )
+
+    const confirmCall = ledgerMock.confirmChargeWithRecord.mock.calls.at(-1)
+    expect(confirmCall).toBeTruthy()
+    const recordParams = confirmCall?.[1] as {
+      quantity: number
+      metadata: Record<string, unknown>
+    }
+    const chargedAmount = confirmCall?.[2]?.chargedAmount as number
+    expect(ledgerMock.increasePendingFreezeAmount).toHaveBeenCalledTimes(1)
+    expect(recordParams.quantity).toBe(120_000)
+    expect(recordParams.metadata.actualVideoTokens).toBe(120_000)
+    expect(chargedAmount).toBeCloseTo(
+      calcVideoByTokens('doubao-seedance-2-0-260128', 120_000, {
+        resolution: '720p',
+        duration: 5,
+        aspectRatio: '16:9',
+        containsVideoInput: false,
+      }),
+      8,
+    )
   })
 
   it('rejects duplicate sync billing key when freeze is already confirmed', async () => {

@@ -84,11 +84,12 @@ export const PATCH = apiHandler(async (
 
   logProjectAction(
     'UPDATE',
+    'UPDATE',
+    { changes: body },
     session.user.id,
     session.user.name,
     projectId,
     updatedProject.name,
-    { changes: body }
   )
 
   return NextResponse.json({ project: updatedProject })
@@ -235,17 +236,18 @@ export const DELETE = apiHandler(async (
 
   logProjectAction(
     'DELETE',
-    session.user.id,
-    session.user.name,
-    projectId,
-    project.name,
+    'DELETE',
     {
       projectName: project.name,
       cosFilesDeleted: cosResult.success,
       cosFilesFailed: cosResult.failed,
       bailianVoicesDeleted: voiceCleanupResult.deletedVoiceIds.length,
       bailianVoicesSkippedReferenced: voiceCleanupResult.skippedReferencedVoiceIds.length,
-    }
+    },
+    session.user.id,
+    session.user.name,
+    projectId,
+    project.name,
   )
 
   _ulogInfo(`[DELETE] 项目删除完成: ${project.name}`)

@@ -84,63 +84,27 @@ export function logAIAnalysis(
   username?: string | null,
   projectId?: string | null,
   projectName?: string | null,
-): void
-export function logAIAnalysis(
-  userId: string | null | undefined,
-  username: string | null | undefined,
-  projectId: string | null | undefined,
-  projectName: string | null | undefined,
-  payload?: unknown,
-): void
-export function logAIAnalysis(
-  ...args:
-    | [string, unknown, unknown?, (string | null)?, (string | null)?, (string | null)?, (string | null)?]
-    | [string | null | undefined, string | null | undefined, string | null | undefined, string | null | undefined, unknown?]
 ): void {
-  let action = 'AI_ANALYSIS'
-  let message: unknown = 'AI_ANALYSIS'
-  let details: unknown = null
-  let userId: string | undefined
-  let username: string | undefined
-  let projectId: string | undefined
-  let projectName: string | undefined
+  const logUserId = toOptionalString(userId)
+  const logUsername = toOptionalString(username)
+  const logProjectId = toOptionalString(projectId)
+  const logProjectName = toOptionalString(projectName)
+  const resolvedDetails = resolveDetails(message, details ?? null)
 
-  if (args.length === 5) {
-    const [legacyUserId, legacyUsername, legacyProjectId, legacyProjectName, payload] = args
-    const payloadRecord = typeof payload === 'object' && payload != null ? (payload as AnyRecord) : null
-    userId = typeof legacyUserId === 'string' ? legacyUserId : undefined
-    username = typeof legacyUsername === 'string' ? legacyUsername : undefined
-    projectId = typeof legacyProjectId === 'string' ? legacyProjectId : undefined
-    projectName = typeof legacyProjectName === 'string' ? legacyProjectName : undefined
-    action = payloadRecord && typeof payloadRecord.action === 'string' ? payloadRecord.action : action
-    message = payloadRecord && typeof payloadRecord.message === 'string' ? payloadRecord.message : action
-    details = payload
-  } else {
-    const [nextAction, nextMessage, nextDetails, nextUserId, nextUsername, nextProjectId, nextProjectName] =
-      args as [string, unknown, unknown?, (string | null)?, (string | null)?, (string | null)?, (string | null)?]
-    action = nextAction
-    message = nextMessage
-    details = nextDetails ?? null
-    userId = toOptionalString(nextUserId)
-    username = toOptionalString(nextUsername)
-    projectId = toOptionalString(nextProjectId)
-    projectName = toOptionalString(nextProjectName)
-  }
-
-  maybeRegisterProject(projectId, projectName)
+  maybeRegisterProject(logProjectId, logProjectName)
   createSemanticLogger('ai').event({
     level: 'INFO',
     audit: true,
     action,
     message: resolveMessage(message, action),
-    userId,
-    projectId,
+    userId: logUserId,
+    projectId: logProjectId,
     details: {
-      ...(typeof resolveDetails(message, details) === 'object' && resolveDetails(message, details) != null
-        ? (resolveDetails(message, details) as AnyRecord)
-        : { details: resolveDetails(message, details) }),
-      username,
-      projectName,
+      ...(typeof resolvedDetails === 'object' && resolvedDetails != null
+        ? (resolvedDetails as AnyRecord)
+        : { details: resolvedDetails }),
+      username: logUsername,
+      projectName: logProjectName,
     },
   })
 }
@@ -153,64 +117,27 @@ export function logProjectAction(
   username?: string | null,
   projectId?: string | null,
   projectName?: string | null,
-): void
-export function logProjectAction(
-  action: string,
-  userId: string | null | undefined,
-  username: string | null | undefined,
-  projectId: string | null | undefined,
-  projectName: string | null | undefined,
-  details?: unknown,
-): void
-export function logProjectAction(
-  ...args:
-    | [string, unknown, unknown?, (string | null)?, (string | null)?, (string | null)?, (string | null)?]
-    | [string, string | null | undefined, string | null | undefined, string | null | undefined, string | null | undefined, unknown?]
 ): void {
-  let action: string
-  let message: unknown
-  let details: unknown = null
-  let userId: string | undefined
-  let username: string | undefined
-  let projectId: string | undefined
-  let projectName: string | undefined
+  const logUserId = toOptionalString(userId)
+  const logUsername = toOptionalString(username)
+  const logProjectId = toOptionalString(projectId)
+  const logProjectName = toOptionalString(projectName)
+  const resolvedDetails = resolveDetails(message, details ?? null)
 
-  if (args.length >= 6) {
-    const [legacyAction, legacyUserId, legacyUsername, legacyProjectId, legacyProjectName, legacyDetails] =
-      args as [string, string | null | undefined, string | null | undefined, string | null | undefined, string | null | undefined, unknown]
-    action = legacyAction
-    message = legacyAction
-    details = legacyDetails
-    userId = toOptionalString(legacyUserId)
-    username = toOptionalString(legacyUsername)
-    projectId = toOptionalString(legacyProjectId)
-    projectName = toOptionalString(legacyProjectName)
-  } else {
-    const [nextAction, nextMessage, nextDetails, nextUserId, nextUsername, nextProjectId, nextProjectName] =
-      args as [string, unknown, unknown?, (string | null)?, (string | null)?, (string | null)?, (string | null)?]
-    action = nextAction
-    message = nextMessage
-    details = nextDetails ?? null
-    userId = toOptionalString(nextUserId)
-    username = toOptionalString(nextUsername)
-    projectId = toOptionalString(nextProjectId)
-    projectName = toOptionalString(nextProjectName)
-  }
-
-  maybeRegisterProject(projectId, projectName)
+  maybeRegisterProject(logProjectId, logProjectName)
   createSemanticLogger('project').event({
     level: 'INFO',
     audit: true,
     action,
     message: resolveMessage(message, action),
-    userId,
-    projectId,
+    userId: logUserId,
+    projectId: logProjectId,
     details: {
-      ...(typeof resolveDetails(message, details) === 'object' && resolveDetails(message, details) != null
-        ? (resolveDetails(message, details) as AnyRecord)
-        : { details: resolveDetails(message, details) }),
-      username,
-      projectName,
+      ...(typeof resolvedDetails === 'object' && resolvedDetails != null
+        ? (resolvedDetails as AnyRecord)
+        : { details: resolvedDetails }),
+      username: logUsername,
+      projectName: logProjectName,
     },
   })
 }

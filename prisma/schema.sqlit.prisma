@@ -355,6 +355,7 @@ model Project {
   novelPromotionData NovelPromotionProject?
   user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   usageCosts         UsageCost[]
+  workflowDefinitions WorkflowDefinition[]
 
   @@index([userId])
   @@map("projects")
@@ -416,6 +417,8 @@ model User {
   globalVoices       GlobalVoice[]
   tasks              Task[]
   taskEvents         TaskEvent[]
+  workflowDefinitions WorkflowDefinition[]
+  workflowDefinitionVersions WorkflowDefinitionVersion[]
 
   @@map("user")
 }
@@ -822,17 +825,46 @@ model MediaObject {
   @@map("media_objects")
 }
 
-model LegacyMediaRefBackup {
-  id          String   @id @default(uuid())
-  runId       String
-  tableName   String
-  rowId       String
-  fieldName   String
-  legacyValue String
-  checksum    String
-  createdAt   DateTime @default(now())
+model WorkflowDefinition {
+  id                 String                      @id @default(uuid())
+  projectId          String
+  userId             String
+  workflowType       String
+  title              String
+  draftDefinition    Json
+  draftValidation    Json?
+  publishedVersion   Int?
+  publishedVersionId String?                     @unique
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  project            Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user               User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions           WorkflowDefinitionVersion[] @relation("WorkflowDefinitionVersionParent")
+  published          WorkflowDefinitionVersion?  @relation("WorkflowDefinitionPublished", fields: [publishedVersionId], references: [id], onDelete: SetNull)
 
-  @@index([runId])
-  @@index([tableName, fieldName])
-  @@map("legacy_media_refs_backup")
+  @@unique([projectId, workflowType])
+  @@index([projectId, updatedAt])
+  @@index([userId, updatedAt])
+  @@map("workflow_definitions")
+}
+
+model WorkflowDefinitionVersion {
+  id                   String              @id @default(uuid())
+  workflowDefinitionId String
+  projectId            String
+  userId               String
+  workflowType         String
+  title                String
+  version              Int
+  definition           Json
+  validation           Json
+  createdAt            DateTime            @default(now())
+  workflowDefinition   WorkflowDefinition  @relation("WorkflowDefinitionVersionParent", fields: [workflowDefinitionId], references: [id], onDelete: Cascade)
+  publishedBy          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publishedFor         WorkflowDefinition? @relation("WorkflowDefinitionPublished")
+
+  @@unique([workflowDefinitionId, version])
+  @@index([projectId, workflowType])
+  @@index([userId, createdAt])
+  @@map("workflow_definition_versions")
 }

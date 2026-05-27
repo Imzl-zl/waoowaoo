@@ -9,8 +9,7 @@ export type PromptField = 'videoPrompt' | 'firstLastFramePrompt'
 interface UseVideoPromptStateParams {
   allPanels: VideoPanel[]
   onUpdateVideoPrompt: (
-    storyboardId: string,
-    panelIndex: number,
+    panelId: string,
     value: string,
     field?: PromptField,
   ) => Promise<void>
@@ -124,16 +123,20 @@ export function useVideoPromptState({
   }, [])
 
   const savePrompt = useCallback(async (
-    storyboardId: string,
-    panelIndex: number,
+    panelId: string | undefined,
     panelKey: string,
     value: string,
     field: PromptField = 'videoPrompt',
   ) => {
+    if (!panelId) {
+      _ulogError('保存视频提示词失败: missing panelId')
+      return
+    }
+
     const stateKey = buildPromptStateKey(panelKey, field)
     setSavingPrompts((prev) => new Set(prev).add(stateKey))
     try {
-      await onUpdateVideoPrompt(storyboardId, panelIndex, value, field)
+      await onUpdateVideoPrompt(panelId, value, field)
     } catch (error) {
       _ulogError('保存视频提示词失败:', error)
     } finally {

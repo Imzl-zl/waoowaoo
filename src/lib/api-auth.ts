@@ -111,11 +111,6 @@ export interface ProjectAuthContextWithIncludes<T extends ProjectAuthIncludes = 
     novelData: NovelDataWithIncludes<T>
 }
 
-/**
- * 向后兼容的类型别名
- */
-export type ProjectAuthContext = ProjectAuthContextWithIncludes<ProjectAuthIncludes>
-
 // ============================================================
 // 错误响应工具
 // ============================================================

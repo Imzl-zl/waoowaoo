@@ -46,6 +46,7 @@ const prismaMock = vi.hoisted(() => ({
   },
   novelPromotionPanel: {
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     update: vi.fn(),
     create: vi.fn(),
     count: vi.fn(),
@@ -250,6 +251,11 @@ describe('api contract - crud routes (behavior)', () => {
       panelCount: 1,
     })
     prismaMock.novelPromotionPanel.findUnique.mockResolvedValue({
+      id: 'panel-1',
+      storyboardId: 'storyboard-1',
+      panelIndex: 0,
+    })
+    prismaMock.novelPromotionPanel.findFirst.mockResolvedValue({
       id: 'panel-1',
       storyboardId: 'storyboard-1',
       panelIndex: 0,
@@ -465,5 +471,58 @@ describe('api contract - crud routes (behavior)', () => {
         description: 'panel description',
       },
     })
+  })
+
+  it('PATCH /novel-promotion/[projectId]/panel updates by panelId only', async () => {
+    authState.authenticated = true
+    const mod = await import('@/app/api/novel-promotion/[projectId]/panel/route')
+    prismaMock.novelPromotionPanel.findUnique.mockResolvedValueOnce({
+      id: 'panel-1',
+      storyboard: {
+        episode: {
+          novelPromotionProject: {
+            projectId: 'project-1',
+          },
+        },
+      },
+    })
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/panel',
+      method: 'PATCH',
+      body: {
+        panelId: 'panel-1',
+        videoPrompt: 'video prompt',
+      },
+    })
+
+    const res = await mod.PATCH(req, {
+      params: Promise.resolve({ projectId: 'project-1' }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(prismaMock.novelPromotionPanel.findUnique).toHaveBeenCalledWith({
+      where: { id: 'panel-1' },
+      select: {
+        id: true,
+        storyboard: {
+          select: {
+            episode: {
+              select: {
+                novelPromotionProject: {
+                  select: { projectId: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    })
+    expect(prismaMock.novelPromotionPanel.update).toHaveBeenCalledWith({
+      where: { id: 'panel-1' },
+      data: {
+        videoPrompt: 'video prompt',
+      },
+    })
+    expect(prismaMock.novelPromotionPanel.create).not.toHaveBeenCalled()
   })
 })

@@ -629,40 +629,37 @@ describe('api specific - user api-config PUT provider uniqueness', () => {
     expect(prismaMock.userPreference.upsert).not.toHaveBeenCalled()
   })
 
-  it('maps legacy customPricing input/output to llm pricing on GET', async () => {
+  it('rejects customPricing input/output legacy shape on PUT', async () => {
     installAuthMocks()
     mockAuthenticated('user-1')
-    prismaMock.userPreference.findUnique.mockResolvedValue({
-      customProviders: JSON.stringify([
-        { id: 'openai-compatible:oa-1', name: 'OpenAI', baseUrl: 'https://oa.test/v1', apiKey: 'enc:key' },
-      ]),
-      customModels: JSON.stringify([
-        {
-          type: 'llm',
-          provider: 'openai-compatible:oa-1',
-          modelId: 'gpt-4.1-mini',
-          modelKey: 'openai-compatible:oa-1::gpt-4.1-mini',
-          name: 'GPT',
-          customPricing: {
-            input: 2.5,
-            output: 5.5,
-          },
-        },
-      ]),
-    })
     const route = await import('@/app/api/user/api-config/route')
 
     const req = buildMockRequest({
       path: '/api/user/api-config',
-      method: 'GET',
+      method: 'PUT',
+      body: {
+        providers: [
+          { id: 'openai-compatible:oa-1', name: 'OpenAI', baseUrl: 'https://oa.test/v1', apiKey: 'oa-key' },
+        ],
+        models: [
+          {
+            type: 'llm',
+            provider: 'openai-compatible:oa-1',
+            modelId: 'gpt-4.1-mini',
+            modelKey: 'openai-compatible:oa-1::gpt-4.1-mini',
+            name: 'GPT',
+            customPricing: {
+              input: 2.5,
+              output: 5.5,
+            },
+          },
+        ],
+      },
     })
 
-    const res = await route.GET(req, routeContext)
-    expect(res.status).toBe(200)
-    const json = await res.json() as { models?: Array<{ customPricing?: { llm?: { inputPerMillion?: number; outputPerMillion?: number } } }> }
-    const model = Array.isArray(json.models) ? json.models[0] : null
-    expect(model?.customPricing?.llm?.inputPerMillion).toBe(2.5)
-    expect(model?.customPricing?.llm?.outputPerMillion).toBe(5.5)
+    const res = await route.PUT(req, routeContext)
+    expect(res.status).toBe(400)
+    expect(prismaMock.userPreference.upsert).not.toHaveBeenCalled()
   })
 
   it('defaults gemini-compatible provider to official route when apiMode is gemini-sdk', async () => {
