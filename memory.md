@@ -7,7 +7,7 @@
 - 栈：Node.js `>=18.18.0` / npm `>=9.0.0` / Next.js 15 / React 19 / Prisma + MySQL / BullMQ + Redis / MinIO / NextAuth / Temporal TS SDK / Vitest。
 - 启动链路：`cp .env.example .env` -> `docker compose up mysql redis minio -d` -> `npx prisma db push` -> `npm run dev`。
 - 验证基线：`npm run verify:commit`、`npm run verify:push`、`npm run test:guards`、`npm run check:file-line-count`。
-- 当前重点：visual workflow foundation、production-bible foundation 和兼容冗余清理均已完成当前切片；下一步应围绕 UI 编辑/锁定、持久化映射或 novel-promotion 迁移做独立切片。
+- 当前重点：visual workflow foundation、production-bible foundation、Production Prep workspace MVP 和兼容冗余清理均已完成当前切片；下一步应围绕 scene/shot 细化工作台、novel-promotion 映射或媒体生成接入做独立切片。
 
 ## 已完成能力
 - 既有小说 / 剧本 / 分镜 / 配音 / 视频 workflow、BullMQ workers、watchdog、bull-board、graph run runtime、provider model config、media storage 和中英双语 App Router/API 契约已经形成。
@@ -23,15 +23,16 @@
 - Visual workflow builder child #8 完成：新增 dedicated `publishedWorkflow` Temporal workflow、`executePublishedWorkflowStep` Activity、runtime executor registry、deterministic `data.transform` 支持，将 `input.user` 接为真实执行 step，将 `artifact.persist` 接入 run-runtime `GraphArtifact` 幂等 upsert，将 `llm.transform` / `llm.analysis` 接入现有模型配置、AI runtime 和同步文本计费边界，并将 `media.generate(image|video|audio)` 接入 provider/storage/billing/cache 与外部任务 checkpoint 边界；`runtime.smoke`、`input.user`、`data.transform`、`artifact.persist`、`llm.transform`、`llm.analysis` 与 `media.generate(image|video|audio)` 当前可执行。
 - Visual workflow builder child #9 / final audit 完成：builder execute 改用 `usePublishedWorkflowRunStream`，published workflow queued/running `runId` 通过 shared run-stream 读取 `/api/runs/:runId/events`，`WorkflowRunStatePanel` 展示 run id、run 状态、进度、ordered step 状态、错误与输出摘要。
 - Production bible foundation 完成：新增 `src/lib/production-bible/` 严格 schema、语义校验、节点输出解析和提示词构造；新增 `story.extractBible`、`story.planEpisodes`、`scene.breakdown`、`shot.plan`、`human.review` 节点；published workflow runtime 通过现有 LLM Activity/model/billing/cache 边界执行前四个 production 节点，并严格解析为 production-prep 结构；`human.review` 产出显式 review checkpoint。
+- Production Prep workspace MVP 完成：新增项目级 `ProjectProductionPrep` 真值源、`src/lib/production-prep/**` service/store/generation/merge 边界、项目级 production-prep API、React Query hooks、`/workspace/[projectId]/production-prep` 工作台、锁定保留冲突摘要和中英文文案。
 - 兼容冗余清理完成：删除 production/published workflow runtime 中无调用的支持判断 helper 和 `workflow-engine/node-types.ts` 转发壳；直接依赖读取收敛到 `published-workflow-step-context.ts`，仍保持缺失依赖显式失败。
 - 全仓旧兼容清理当前切片完成：删除无引用旧脚本/dev routes/workspaceRedesign 文案/旧 generator alias/`LegacyMediaRefBackup`；收紧 `novel-promotion panel PATCH` 为 `panelId` 唯一路径；移除 logging 旧签名 overload、`ProjectAuthContext` alias、`customPricing.input/output` 旧价格结构和对应迁移入口。
 
 ## 进行中 / 未完成
 - `submitTask` 默认仍走 BullMQ；Temporal 只在显式 `TASK_EXECUTION_RUNTIME=temporal_run_task` 且支持 task type 时使用。
-- 用户发布的 visual workflow 已接入 dedicated published runtime；LLM 文本节点、`media.generate(image|video|audio)` 和 production-prep 节点已接入 real Activities。当前 visual workflow child deliverables #1-#9 与 production-bible foundation 均完成。
+- 用户发布的 visual workflow 已接入 dedicated published runtime；LLM 文本节点、`media.generate(image|video|audio)` 和 production-prep 节点已接入 real Activities。当前 visual workflow child deliverables #1-#9、production-bible foundation 和 Production Prep workspace MVP 均完成。
 - `.codex-tasks/20260526-visual-workflow-builder-epic/` final validation 已通过；当前目标范围内已能 UI 创建/连接/配置/校验/发布/执行并观察 run/step 状态。
 - README 仍标注项目处于测试初期，数据库兼容和升级策略仍在快速迭代。
-- 仓库当前有大量未提交/未跟踪改动来自本轮 visual workflow/Temporal 工作；不要清理无关 `.serena/` 或他人改动。
+- 仓库当前有未提交/未跟踪改动来自本轮 Production Prep workspace；不要清理无关 `.serena/` 或他人改动。
 
 ## 关键决策
 - API route 默认是 `apiHandler` + 显式鉴权 + 薄协议壳；业务逻辑进 `src/lib/**`。
@@ -47,6 +48,8 @@
 - Temporal published workflow 使用 `TEMPORAL_WORKFLOW_TYPE.PUBLISHED_WORKFLOW`，通过 `executePublishedWorkflowStep` Activity 执行显式支持的节点；支持判断和 dispatch 都来自同一个 executor registry。
 - `runtime.smoke`、`input.user`、`data.transform`、`artifact.persist`、`llm.transform`、`llm.analysis` 与 `media.generate(image|video|audio)` 是当前可执行的 visual workflow 节点。
 - `story.extractBible`、`story.planEpisodes`、`scene.breakdown`、`shot.plan` 和 `human.review` 是当前可执行的 production-prep visual workflow 节点；前四个复用 LLM Activity/model/billing/cache 后严格解析为 production-bible schema，`human.review` 只记录 checkpoint，不伪造已审批。
+- 项目级 Production Prep 长期真值在 `ProjectProductionPrep.document`；workflow run artifact 只能作为生成过程产物，不替代保存后的 Production Prep 文档。
+- Production Prep 自动生成必须通过 `src/lib/production-prep/merge.ts` 的锁定策略，保留 locked characters/locations/props/style/continuity 并返回显式 conflicts。
 - Published workflow execute API 接受结构化 execution input；`input.user` Activity 读取 `config.outputKey`，缺少输入时显式失败，不做空值 fallback 或 mock output。
 - `artifact.persist` Activity 只把直接依赖 step 的 `artifactPayload` 通过 run-runtime `createArtifact` 幂等写入 `GraphArtifact`；它不是媒体资产入库，不处理 storage key、signed URL、provider output 或计费。
 - `llm.transform` / `llm.analysis` Activity 只保存 instruction/outputFormat/temperature 等非 secret 配置；模型从项目/用户 `analysisModel` 解析，provider key 仍通过既有 `api-config` 边界读取；调用走 `executeAiTextStep`，计费走 `withTextBilling`，成功结果缓存为 `workflow.llm.result` GraphArtifact。
@@ -69,6 +72,7 @@
 - `.dockerignore` 排除 Markdown / tests / docs / AGENTS；容器内不是协作文档真值。
 
 ## 最近活跃窗口
+- 2026-05-27：完成 Production Prep workspace MVP。新增项目级 `project_production_preps` Prisma model/migration、`src/lib/production-prep` service 边界、GET/PUT/extract/plan-episodes API、React Query hooks、`/workspace/[projectId]/production-prep` 工作台和 route/unit 覆盖。验证：production-prep 定向 4 files / 17 tests、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check`、Prisma schema validate 通过；sqlite schema 需用 sqlite URL 校验。
 - 2026-05-27：完成 child #8 Business node runtime Activities。新增 dedicated `publishedWorkflow`、`executePublishedWorkflowStep` Activity、published node executor registry、`data.transform`、structured `input.user`、`artifact.persist`、`llm.transform` / `llm.analysis`、`media.generate(image)`、async external-job checkpoint/resume、`media.generate(video)` 和 `media.generate(audio)`。audio 独立走 `audioModel`、`audioVoice`、`audioRate`、`audioMaxFreezeSeconds`、`generateAudio`、`withVoiceBilling(actualDurationSeconds/actualSeconds)`、`processMediaResult(type='audio')`。目标 workflow-engine/runtime/API/UI/billing 测试 9 files / 100 tests、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check` 通过。
 - 2026-05-27：完成全仓旧兼容/冗余清理当前切片。删除旧一次性脚本、dev routes、workspaceRedesign 文案、旧 generator alias、`LegacyMediaRefBackup`、`customPricing.input/output` 迁移入口；logging 和 project action 日志只保留 canonical signature；`novel-promotion panel PATCH` 只接受 `panelId`。验证：API/worker/user-api-config/generator 定向测试、Prisma validate、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check` 通过。
 - 2026-05-27：完成 production-bible foundation。新增影视前期准备资产 contract、production 节点 catalog/config/runtime、严格 LLM 输出解析、架构文档和单测。验证：production-bible/workflow-engine/runtime 定向 4 files / 50 tests、`typecheck`、`check:file-line-count`、`test:guards`、`git diff --check` 通过。

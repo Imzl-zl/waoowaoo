@@ -169,6 +169,7 @@ export const continuityRulesSchema = z.object({
   propRules: z.record(textList).default({}),
   lockedAssetIds: textList,
   forbiddenChanges: textList,
+  lock: lockable,
 }).strict()
 
 export const productionReviewStateSchema = z.object({

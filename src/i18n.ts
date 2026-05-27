@@ -48,7 +48,8 @@ export default getRequestConfig(async ({ requestLocale }) => {
         assetPicker,
         layout,
         home,
-        workflowBuilder
+        workflowBuilder,
+        productionPrep
     ] = await Promise.all([
         import(`../messages/${locale}/common.json`),
         import(`../messages/${locale}/stages.json`),
@@ -81,7 +82,8 @@ export default getRequestConfig(async ({ requestLocale }) => {
         import(`../messages/${locale}/assetPicker.json`),
         import(`../messages/${locale}/layout.json`),
         import(`../messages/${locale}/home.json`),
-        import(`../messages/${locale}/workflowBuilder.json`)
+        import(`../messages/${locale}/workflowBuilder.json`),
+        import(`../messages/${locale}/productionPrep.json`)
     ]);
 
     return {
@@ -118,7 +120,8 @@ export default getRequestConfig(async ({ requestLocale }) => {
             assetPicker: assetPicker.default,
             layout: layout.default,
             home: home.default,
-            workflowBuilder: workflowBuilder.default
+            workflowBuilder: workflowBuilder.default,
+            productionPrep: productionPrep.default
         }
     };
 });

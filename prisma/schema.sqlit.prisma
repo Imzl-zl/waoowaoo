@@ -353,6 +353,7 @@ model Project {
   updatedAt          DateTime               @default(now()) @updatedAt
   lastAccessedAt     DateTime?
   novelPromotionData NovelPromotionProject?
+  productionPrep     ProjectProductionPrep?
   user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   usageCosts         UsageCost[]
   workflowDefinitions WorkflowDefinition[]
@@ -419,6 +420,7 @@ model User {
   taskEvents         TaskEvent[]
   workflowDefinitions WorkflowDefinition[]
   workflowDefinitionVersions WorkflowDefinitionVersion[]
+  productionPreps    ProjectProductionPrep[]
 
   @@map("user")
 }
@@ -867,4 +869,21 @@ model WorkflowDefinitionVersion {
   @@index([projectId, workflowType])
   @@index([userId, createdAt])
   @@map("workflow_definition_versions")
+}
+
+model ProjectProductionPrep {
+  id                  String   @id @default(uuid())
+  projectId           String   @unique
+  userId              String
+  document            Json
+  version             Int      @default(1)
+  sourceMode          String   @default("manual")
+  lastGeneratedSource Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+  @@map("project_production_preps")
 }

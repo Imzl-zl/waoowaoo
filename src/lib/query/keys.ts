@@ -106,6 +106,11 @@ export const queryKeys = {
             ['workflow-definitions', projectId, workflowType] as const,
     },
 
+    // ============ Production prep ============
+    productionPrep: {
+        detail: (projectId: string) => ['production-prep', projectId] as const,
+    },
+
     // ============ 顶层便捷函数 ============
     /**
      * 项目基础数据

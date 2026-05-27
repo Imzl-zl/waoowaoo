@@ -17,7 +17,7 @@ import { resolveSelectedEpisodeId } from './episode-selection'
 import { ModelCapabilityDropdown } from '@/components/ui/config-modals/ModelCapabilityDropdown'
 import { AppIcon } from '@/components/ui/icons'
 import { readConfiguredAnalysisModel, shouldGuideToModelSetup } from '@/lib/workspace/model-setup'
-import { useRouter } from '@/i18n/navigation'
+import { Link, useRouter } from '@/i18n/navigation'
 import { readApiErrorMessage } from '@/lib/api/read-error-message'
 
 // 有效的stage值
@@ -55,6 +55,7 @@ export default function ProjectDetailPage() {
   }
   const projectId = params.projectId
   const t = useTranslations('workspaceDetail')
+  const tp = useTranslations('productionPrep')
   const tc = useTranslations('common')
 
   // 从URL读取参数
@@ -390,6 +391,22 @@ export default function ProjectDetailPage() {
       {/* 主内容区 - 占满全部宽度 */}
       <main className="flex-1 overflow-y-auto">
         <div className="container mx-auto px-4 py-8">
+          <section className="glass-surface mb-4 flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <div className="mb-1 flex items-center gap-2 text-sm font-bold text-[var(--glass-text-primary)]">
+                <AppIcon name="bookOpen" className="h-4 w-4 text-[var(--glass-tone-info-fg)]" />
+                {tp('entryTitle')}
+              </div>
+              <p className="text-sm text-[var(--glass-text-secondary)]">{tp('entryDescription')}</p>
+            </div>
+            <Link
+              href={{ pathname: `/workspace/${projectId}/production-prep` }}
+              className="glass-btn-base glass-btn-secondary shrink-0 rounded-lg px-4 py-2 text-sm"
+            >
+              <AppIcon name="arrowRight" className="h-4 w-4" />
+              {tp('openWorkbench')}
+            </Link>
+          </section>
           {isGlobalAssetsView && project.novelPromotionData ? (
             // 全局资产视图（确保数据准备好）
             <div>
